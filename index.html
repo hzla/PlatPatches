@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pokemon Platinum ROM Patcher</title>
+    <link rel="stylesheet" href="./styles.css?v=6" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="header">
+        <div>
+          <p class="eyebrow">US Pokemon Platinum</p>
+          <h1>ROM Patcher</h1>
+        </div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v6</div>
+      </section>
+
+      <section class="panel upload-panel">
+        <label class="file-drop" for="romInput">
+          <span class="file-title">Choose a .nds ROM</span>
+          <span class="file-subtitle" id="fileSubtitle">The patched ROM is generated locally in your browser.</span>
+        </label>
+        <input id="romInput" type="file" accept=".nds,application/octet-stream" />
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Patches</h2>
+          <label class="force-toggle">
+            <input id="forceInput" type="checkbox" />
+            <span>Allow compatible modified bytes</span>
+          </label>
+        </div>
+
+        <div class="patch-grid" id="patchGrid">
+          <label class="patch-card">
+            <input type="checkbox" value="noCrits" checked />
+            <span>
+              <strong>No critical hits</strong>
+              <small>Forces the critical-hit multiplier routine to return non-critical.</small>
+            </span>
+          </label>
+
+          <label class="patch-card">
+            <input type="checkbox" value="iv15_31" checked />
+            <span>
+              <strong>Random IVs 15-31</strong>
+              <small>Rerolls each random IV until it lands in the upper half.</small>
+            </span>
+          </label>
+
+          <label class="patch-card">
+            <input type="checkbox" value="wildNatures" />
+            <span>
+              <strong>Filter wild natures</strong>
+              <small>Wild natures never lower Attack, Special Attack, or Speed.</small>
+            </span>
+          </label>
+
+          <label class="patch-card">
+            <input type="checkbox" value="movementSpeed" />
+            <span>
+              <strong>Faster movement</strong>
+              <small>Bumps walk/run/cycling movement actions up to faster tiers.</small>
+            </span>
+          </label>
+
+          <label class="patch-card">
+            <input type="checkbox" value="instantText" />
+            <span>
+              <strong>Force fast text</strong>
+              <small>Forces the fastest normal text speed: one character per frame.</small>
+            </span>
+          </label>
+
+          <div class="patch-card patch-card-config">
+            <input id="text4xPatch" type="checkbox" value="text4x" />
+            <div class="patch-body">
+              <label class="patch-title" for="text4xPatch">
+                <strong>Experimental text speed</strong>
+                <small>Prints multiple normal characters per frame. Experimental; may have text timing quirks.</small>
+              </label>
+              <div class="range-control">
+                <label for="textCharsPerFrame">
+                  <span>Chars per frame</span>
+                  <output id="textCharsPerFrameValue" for="textCharsPerFrame">4x</output>
+                </label>
+                <input id="textCharsPerFrame" type="range" min="2" max="10" step="1" value="4" />
+              </div>
+            </div>
+          </div>
+
+          <label class="patch-card">
+            <input type="checkbox" value="playerAccuracy" />
+            <span>
+              <strong>Player accuracy bypass</strong>
+              <small>Player-side moves bypass standard accuracy misses.</small>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="applyButton" type="button" disabled>Apply selected patches</button>
+        <a id="downloadLink" class="download-link hidden">Download patched ROM</a>
+      </section>
+
+      <section class="panel log-panel">
+        <h2>Log</h2>
+        <pre id="logOutput">Waiting for a ROM.</pre>
+      </section>
+    </main>
+
+    <script src="./app.js?v=6"></script>
+  </body>
+</html>

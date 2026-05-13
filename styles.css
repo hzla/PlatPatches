@@ -1,0 +1,292 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --text: #17202a;
+  --muted: #5b6775;
+  --line: #d9e0e8;
+  --accent: #2368a2;
+  --accent-dark: #184d78;
+  --good: #1e7b4d;
+  --bad: #a23636;
+  --shadow: 0 16px 40px rgba(25, 41, 61, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: 36px;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+.status-pill {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.status-pill.ready {
+  border-color: rgba(30, 123, 77, 0.3);
+  color: var(--good);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.upload-panel {
+  padding: 0;
+}
+
+.file-drop {
+  display: block;
+  padding: 24px;
+  border: 1px dashed #aeb9c5;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fbfcfe;
+}
+
+.file-drop:hover {
+  border-color: var(--accent);
+}
+
+.file-title {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.file-subtitle {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+input[type="file"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.force-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.patch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.patch-card {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #ffffff;
+}
+
+.patch-card:hover {
+  border-color: #aeb9c5;
+}
+
+.patch-card > input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.patch-body {
+  min-width: 0;
+}
+
+.patch-title {
+  display: block;
+  cursor: pointer;
+}
+
+.patch-card strong,
+.patch-card small {
+  display: block;
+}
+
+.patch-card small {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.range-control {
+  margin-top: 12px;
+}
+
+.range-control label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.range-control output {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.range-control input[type="range"] {
+  width: 100%;
+  margin: 8px 0 0;
+  accent-color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+button,
+.download-link {
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 15px;
+  font: inherit;
+  font-weight: 700;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-dark);
+}
+
+button:disabled {
+  background: #b7c1cb;
+  cursor: not-allowed;
+}
+
+.download-link {
+  display: inline-block;
+  color: white;
+  text-decoration: none;
+  background: var(--good);
+}
+
+.hidden {
+  display: none;
+}
+
+.log-panel {
+  margin-bottom: 0;
+}
+
+pre {
+  min-height: 180px;
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #111820;
+  color: #e8eef5;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .header,
+  .panel-heading,
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .patch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-pill,
+  .force-toggle {
+    white-space: normal;
+  }
+}

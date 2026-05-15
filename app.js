@@ -9,9 +9,10 @@
   }
 
   const PATCHES = {
+    frameRate: "Unlock framerate",
     shinyOdds: "Shiny odds",
     noCrits: "No critical hits",
-    iv15_31: "Random IVs 15-31",
+    iv15_31: "Random IV range",
     wildNatures: "Filter wild natures",
     movementSpeed: "Faster movement",
     fairyType: "Fairy Patch",
@@ -20,7 +21,7 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v18";
+  const APP_VERSION = "v23";
   const CONSOLE_CONFIG = {
     debugFairyBattleTest: false,
   };
@@ -473,7 +474,58 @@
     return thumbInst16(0xe000 | imm11);
   }
 
-  function buildIvPatch(patchRamAddress) {
+  function buildIvPatch(patchRamAddress, minIv = 15, maxIv = 31) {
+    const size = IV_ORIGINAL.length;
+    const helperOffset = 0x68;
+    const afterPatchAddress = patchRamAddress + size;
+    const helperAddress = patchRamAddress + helperOffset;
+    const setValueAddress = 0x02074c60;
+    const lcrngNextAddress = 0x0201d2e8;
+    const out = [];
+
+    function emit(bytes) {
+      out.push(...bytes);
+    }
+
+    for (let field = 0x46; field <= 0x4b; field += 1) {
+      const callAddress = patchRamAddress + out.length;
+      emit(thumbBl(callAddress, helperAddress));
+      emit(bytesFromHex("01 90 28 1c"));
+      emit([0x00 | field, 0x21]);
+      emit(bytesFromHex("01 aa"));
+      emit(thumbBl(patchRamAddress + out.length, setValueAddress));
+    }
+
+    emit(thumbB(patchRamAddress + out.length, afterPatchAddress));
+    while (out.length < helperOffset) {
+      emit(NOP);
+    }
+
+    emit(bytesFromHex("00 b5"));
+    const randomizeAddress = patchRamAddress + out.length;
+    emit(thumbBl(patchRamAddress + out.length, lcrngNextAddress));
+    emit(bytesFromHex("1f 21 08 40"));
+    emit([maxIv, 0x28]);
+    emit(thumbCondBranch(patchRamAddress + out.length, randomizeAddress, 0x8));
+    emit([minIv, 0x28]);
+    emit(thumbCondBranch(patchRamAddress + out.length, randomizeAddress, 0x3));
+    emit(bytesFromHex("00 bd"));
+
+    return padBytes(new Uint8Array(out), size);
+  }
+
+  function existingIvPatchRangeAt(rom, offset, patchRamAddress) {
+    for (let minIv = 0; minIv <= 31; minIv += 1) {
+      for (let maxIv = minIv; maxIv <= 31; maxIv += 1) {
+        if (bytesEqual(rom, offset, buildIvPatch(patchRamAddress, minIv, maxIv))) {
+          return { minIv, maxIv };
+        }
+      }
+    }
+    return null;
+  }
+
+  function buildLegacyIv15To31Patch(patchRamAddress) {
     const size = IV_ORIGINAL.length;
     const helperOffset = 0x68;
     const afterPatchAddress = patchRamAddress + size;
@@ -507,7 +559,43 @@
     return padBytes(new Uint8Array(out), size);
   }
 
-  const WILD_NATURE_PATCH = padBytes(
+  const NATURE_NAMES = [
+    "Hardy",
+    "Lonely",
+    "Brave",
+    "Adamant",
+    "Naughty",
+    "Bold",
+    "Docile",
+    "Relaxed",
+    "Impish",
+    "Lax",
+    "Timid",
+    "Hasty",
+    "Serious",
+    "Jolly",
+    "Naive",
+    "Modest",
+    "Mild",
+    "Quiet",
+    "Bashful",
+    "Rash",
+    "Calm",
+    "Gentle",
+    "Sassy",
+    "Careful",
+    "Quirky",
+  ];
+  const NATURE_STAT_GRID = [
+    { key: "attack", label: "Attack", natureIndex: 0 },
+    { key: "defense", label: "Defense", natureIndex: 1 },
+    { key: "sp-atk", label: "Sp. Atk", natureIndex: 3 },
+    { key: "sp-def", label: "Sp. Def", natureIndex: 4 },
+    { key: "speed", label: "Speed", natureIndex: 2 },
+  ];
+  const DEFAULT_ALLOWED_NATURES = Array.from({ length: NATURE_NAMES.length }, (_, nature) => nature);
+
+  const WILD_NATURE_LEGACY_PATCH = padBytes(
     bytesFromHex(`
       10 b5 db f5 ff fb 0f 21 08 40 0d 28 f9 d2 01 a1
       08 5c 10 bd 00 01 04 06 09 0b 0c 0e 10 12 13 15 18 00 00 00
@@ -523,6 +611,72 @@
     a0 f6 22 ea 00 04 04 0c 19 2c 01 d3 e0 f5 20 ff
     20 06 00 0e 38 bd c0 46 3e 0a 00 00
   `);
+
+  function buildWildNaturePatch(functionAddress, allowedNatures) {
+    const allowed = natureAllowedOption({ natureAllowed: allowedNatures });
+    const out = [];
+    const lcrngNextAddress = 0x0201d2e8;
+    const loopAddress = functionAddress + 2;
+
+    function emit(bytes) {
+      out.push(...bytes);
+    }
+
+    emit(bytesFromHex("00 b5"));
+    emit(thumbBl(functionAddress + out.length, lcrngNextAddress));
+    emit(bytesFromHex("1f 21 08 40"));
+    emit([allowed.length, 0x28]);
+    emit(thumbCondBranch(functionAddress + out.length, loopAddress, 0x2));
+    emit(bytesFromHex("01 a1 08 5c 00 bd"));
+    emit(allowed);
+
+    return padBytes(new Uint8Array(out), WILD_NATURE_ORIGINAL.length);
+  }
+
+  function parseWildNaturePatchAt(data, offset) {
+    if (offset < 0 || offset + WILD_NATURE_ORIGINAL.length > data.length) {
+      return null;
+    }
+    if (
+      data[offset] !== 0x00 ||
+      data[offset + 1] !== 0xb5 ||
+      data[offset + 6] !== 0x1f ||
+      data[offset + 7] !== 0x21 ||
+      data[offset + 8] !== 0x08 ||
+      data[offset + 9] !== 0x40 ||
+      data[offset + 11] !== 0x28 ||
+      data[offset + 14] !== 0x01 ||
+      data[offset + 15] !== 0xa1 ||
+      data[offset + 16] !== 0x08 ||
+      data[offset + 17] !== 0x5c ||
+      data[offset + 18] !== 0x00 ||
+      data[offset + 19] !== 0xbd
+    ) {
+      return null;
+    }
+    const count = data[offset + 10];
+    if (count < 1 || count > 25 || offset + 20 + count > data.length) {
+      return null;
+    }
+    const allowed = Array.from(data.slice(offset + 20, offset + 20 + count));
+    if (new Set(allowed).size !== allowed.length || allowed.some((nature) => nature > 24)) {
+      return null;
+    }
+    return allowed;
+  }
+
+  function findWildNaturePatch(data, start, end) {
+    const hits = [];
+    const cappedStart = Math.max(0, start);
+    const cappedEnd = Math.min(data.length, end);
+    for (let offset = cappedStart; offset <= cappedEnd - WILD_NATURE_ORIGINAL.length; offset += 2) {
+      const allowed = parseWildNaturePatchAt(data, offset);
+      if (allowed) {
+        hits.push({ offset, allowed });
+      }
+    }
+    return hits;
+  }
 
   const ACCURACY_TRAMPOLINE = bytesFromHex(`
     20 f0 b5 fd 00 20 08 b0 f8 bd c0 46 c0 46 c0 46 c0 46
@@ -1411,6 +1565,298 @@
     logShinyAlwaysWarning(threshold, log);
   }
 
+  const FRAME_RATE_HOOK_RAM = 0x02000df2;
+  const FRAME_RATE_CAVE_RAM = 0x020f93d0;
+  const FRAME_RATE_BATTLE_SIGNATURE_RAM = 0x0224a948;
+  const FRAME_RATE_BATTLE_SIGNATURE_VALUE = 0x2801;
+  const FRAME_RATE_HOOK_ORIGINAL = bytesFromHex("e0 6a 40 1c e0 62 25 63");
+  const FRAME_RATE_HOOK_GLOBAL = bytesFromHex("e0 6a 40 1c e0 62 00 00");
+  const FRAME_RATE_HOOK_TAIL = bytesFromHex("c0 46 c0 46");
+
+  function buildFrameRateBattleHelper(helperAddress) {
+    const out = [];
+    const literalFixups = [];
+
+    function here() {
+      return helperAddress + out.length;
+    }
+    function emit16(value) {
+      out.push(value & 0xff, (value >>> 8) & 0xff);
+    }
+    function emitU32(value) {
+      out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+    }
+    function ldrLiteral(register, value) {
+      literalFixups.push({ offset: out.length, at: here(), register, value });
+      emit16(0);
+    }
+
+    emit16(0x6ae0); // ldr r0, [r4, #0x2c]
+    emit16(0x1c40); // adds r0, #1
+    emit16(0x62e0); // str r0, [r4, #0x2c]
+    ldrLiteral(1, FRAME_RATE_BATTLE_SIGNATURE_RAM);
+    emit16(0x8809); // ldrh r1, [r1]
+    ldrLiteral(0, FRAME_RATE_BATTLE_SIGNATURE_VALUE);
+    emit16(0x4281); // cmp r1, r0
+    const beqAt = here();
+    const beqOffset = out.length;
+    emit16(0);
+    emit16(0x6325); // str r5, [r4, #0x30]
+    const doneAddress = here();
+    emit16(0x4770); // bx lr
+
+    while (out.length % 4 !== 0) {
+      out.push(0);
+    }
+
+    const literalAddresses = new Map();
+    for (const fixup of literalFixups) {
+      if (!literalAddresses.has(fixup.value)) {
+        literalAddresses.set(fixup.value, here());
+        emitU32(fixup.value);
+      }
+    }
+
+    const beq = thumbCondBranch(beqAt, doneAddress, 0);
+    out[beqOffset] = beq[0];
+    out[beqOffset + 1] = beq[1];
+
+    for (const fixup of literalFixups) {
+      const literalAddress = literalAddresses.get(fixup.value);
+      const pcBase = (fixup.at + 4) & ~3;
+      const literalOffset = literalAddress - pcBase;
+      if (literalOffset < 0 || literalOffset > 1020 || literalOffset % 4 !== 0) {
+        throw new Error("internal framerate literal is out of range");
+      }
+      const inst = 0x4800 | (fixup.register << 8) | (literalOffset / 4);
+      out[fixup.offset] = inst & 0xff;
+      out[fixup.offset + 1] = (inst >>> 8) & 0xff;
+    }
+
+    return new Uint8Array(out);
+  }
+
+  function frameRateBattleHook(hookAddress, helperAddress) {
+    return new Uint8Array([...thumbBl(hookAddress, helperAddress), ...FRAME_RATE_HOOK_TAIL]);
+  }
+
+  function frameRateBattleHookInfo(rom, hookAt, hookAddress, arm9) {
+    if (!bytesEqual(rom, hookAt + 4, FRAME_RATE_HOOK_TAIL)) {
+      return null;
+    }
+    const helperAddress = decodeThumbBl(hookAddress, rom, hookAt);
+    if (helperAddress == null) {
+      return null;
+    }
+    const helperAt = arm9.fileOffset + (helperAddress - arm9.loadAddress);
+    const helper = buildFrameRateBattleHelper(helperAddress);
+    if (
+      helperAt < arm9.fileOffset ||
+      helperAt + helper.length > arm9.fileOffset + arm9.size ||
+      !bytesEqual(rom, helperAt, helper)
+    ) {
+      return null;
+    }
+    return { helperAddress, helperAt, helper };
+  }
+
+  function findAlignedFillRun(data, start, end, value, size, preferredOffset, alignment = 4) {
+    const runs = [];
+    let i = start;
+    while (i <= end - size) {
+      if (data[i] !== value) {
+        i += 1;
+        continue;
+      }
+      let j = i + 1;
+      while (j < end && data[j] === value) {
+        j += 1;
+      }
+      if (j - i >= size) {
+        const alignedStart = (i + alignment - 1) & ~(alignment - 1);
+        if (alignedStart + size <= j) {
+          runs.push(alignedStart);
+        }
+      }
+      i = j;
+    }
+    if (!runs.length) {
+      return -1;
+    }
+    runs.sort((a, b) => Math.abs(a - preferredOffset) - Math.abs(b - preferredOffset));
+    return runs[0];
+  }
+
+  function locateFrameRateHook(rom, preferredHookAt, label) {
+    if (
+      bytesEqual(rom, preferredHookAt, FRAME_RATE_HOOK_ORIGINAL) ||
+      bytesEqual(rom, preferredHookAt, FRAME_RATE_HOOK_GLOBAL)
+    ) {
+      return { offset: preferredHookAt, usedFallback: false };
+    }
+    const hits = [
+      ...findNeedle(rom, FRAME_RATE_HOOK_ORIGINAL, preferredHookAt - 0x200, preferredHookAt + 0x200),
+      ...findNeedle(rom, FRAME_RATE_HOOK_GLOBAL, preferredHookAt - 0x200, preferredHookAt + 0x200),
+    ];
+    const uniqueHits = Array.from(new Set(hits));
+    if (uniqueHits.length === 1) {
+      return { offset: uniqueHits[0], usedFallback: true };
+    }
+    if (uniqueHits.length > 1) {
+      throw new PatchError(
+        `${label} fallback scan found multiple candidate offsets: ${uniqueHits.map(hex).join(", ")}.`
+      );
+    }
+    return { offset: preferredHookAt, usedFallback: false };
+  }
+
+  function patchFrameRateUnlock(rom, force, log, options = {}) {
+    const mode = frameRateModeOption(options);
+    const label = `Unlock framerate (${mode === "global" ? "global" : "battle only"})`;
+    const arm9 = getArm9Info(rom);
+    const preferredHookAt = arm9Offset(rom, FRAME_RATE_HOOK_RAM, FRAME_RATE_HOOK_ORIGINAL.length);
+    let hookAt = preferredHookAt;
+    let usedFallback = false;
+    let hookAddress = FRAME_RATE_HOOK_RAM;
+    let battleInfo = frameRateBattleHookInfo(rom, hookAt, hookAddress, arm9);
+
+    if (!battleInfo) {
+      const located = locateFrameRateHook(rom, preferredHookAt, label);
+      hookAt = located.offset;
+      usedFallback = located.usedFallback;
+      hookAddress = arm9.loadAddress + (hookAt - arm9.fileOffset);
+      battleInfo = frameRateBattleHookInfo(rom, hookAt, hookAddress, arm9);
+    }
+
+    if (mode === "global") {
+      if (bytesEqual(rom, hookAt, FRAME_RATE_HOOK_GLOBAL)) {
+        log.push(
+          `${label}: already patched at ARM9 file ${hex(hookAt)} / RAM ${hex(hookAddress)}${
+            usedFallback ? " (fallback scan)" : ""
+          }.`
+        );
+        return;
+      }
+      if (
+        !bytesEqual(rom, hookAt, FRAME_RATE_HOOK_ORIGINAL) &&
+        !battleInfo &&
+        !force
+      ) {
+        const found = Array.from(rom.slice(hookAt, hookAt + FRAME_RATE_HOOK_ORIGINAL.length))
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(" ");
+        throw new PatchError(
+          `${label} sanity check failed at ${hex(hookAt)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+        );
+      }
+      writeBytes(rom, hookAt, FRAME_RATE_HOOK_GLOBAL);
+      log.push(
+        `${label}: ${battleInfo ? "replaced battle-only hook with global edit" : "patched"} at ARM9 file ${hex(
+          hookAt
+        )} / RAM ${hex(hookAddress)}${usedFallback ? " (fallback scan)" : ""}.`
+      );
+      return;
+    }
+
+    if (battleInfo) {
+      log.push(
+        `${label}: already patched at ARM9 file ${hex(hookAt)} / RAM ${hex(
+          hookAddress
+        )}; helper at ARM9 file ${hex(battleInfo.helperAt)} / RAM ${hex(
+          battleInfo.helperAddress
+        )}${usedFallback ? " (fallback scan)" : ""}.`
+      );
+      return;
+    }
+
+    const preferredHelper = buildFrameRateBattleHelper(FRAME_RATE_CAVE_RAM);
+    const preferredCaveAt = arm9Offset(rom, FRAME_RATE_CAVE_RAM, preferredHelper.length);
+    let caveAt = preferredCaveAt;
+    let caveFillValue = 0x00;
+    let caveFallback = false;
+
+    if (
+      !bytesEqual(rom, caveAt, new Uint8Array(preferredHelper.length).fill(0x00)) &&
+      !bytesEqual(rom, caveAt, preferredHelper)
+    ) {
+      let dynamicCave = findAlignedFillRun(
+        rom,
+        arm9.fileOffset,
+        arm9.fileOffset + arm9.size,
+        0x00,
+        preferredHelper.length,
+        preferredCaveAt
+      );
+      if (dynamicCave === -1) {
+        dynamicCave = findAlignedFillRun(
+          rom,
+          arm9.fileOffset,
+          arm9.fileOffset + arm9.size,
+          0xff,
+          preferredHelper.length,
+          preferredCaveAt
+        );
+        caveFillValue = 0xff;
+      }
+      if (dynamicCave !== -1) {
+        caveAt = dynamicCave;
+        caveFallback = caveAt !== preferredCaveAt;
+      } else if (!force) {
+        throw new PatchError(`${label} could not find a free ARM9 code cave.`);
+      }
+    }
+
+    const helperAddress = arm9.loadAddress + (caveAt - arm9.fileOffset);
+    const helper = buildFrameRateBattleHelper(helperAddress);
+    const hook = frameRateBattleHook(hookAddress, helperAddress);
+    const helperAlready = bytesEqual(rom, caveAt, helper);
+    const replacedGlobal = bytesEqual(rom, hookAt, FRAME_RATE_HOOK_GLOBAL);
+    const hookCompatible =
+      bytesEqual(rom, hookAt, FRAME_RATE_HOOK_ORIGINAL) ||
+      replacedGlobal;
+
+    if (!hookCompatible && !force) {
+      const found = Array.from(rom.slice(hookAt, hookAt + hook.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `${label} hook sanity check failed at ${hex(hookAt)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    if (
+      !helperAlready &&
+      !bytesEqual(rom, caveAt, new Uint8Array(helper.length).fill(caveFillValue)) &&
+      !force
+    ) {
+      throw new PatchError(
+        `${label} code cave sanity check failed at ${hex(caveAt)}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (!helperAlready) {
+      writeBytes(rom, caveAt, helper);
+    }
+    writeBytes(rom, hookAt, hook);
+
+    const notes = [];
+    if (usedFallback) {
+      notes.push("hook fallback scan");
+    }
+    if (caveFallback) {
+      notes.push(`code-cave fallback scan (${hex(caveFillValue)} fill)`);
+    }
+    if (replacedGlobal) {
+      notes.push("updated from global");
+    }
+    log.push(
+      `${label}: installed hook at ARM9 file ${hex(hookAt)} / RAM ${hex(
+        hookAddress
+      )}; helper at ARM9 file ${hex(caveAt)} / RAM ${hex(helperAddress)}${
+        notes.length ? ` (${notes.join(", ")})` : ""
+      }.`
+    );
+  }
+
   function patchNoCrits(rom, force, log) {
     const overlayId = OVERLAY_16;
     const tableOffset = 0x33a60;
@@ -1448,15 +1894,19 @@
     );
   }
 
-  function patchIv15To31(rom, force, log) {
+  function patchIv15To31(rom, force, log, options = {}) {
+    const range = ivRangeOption(options);
+    const label = `Random IV range ${range.minIv}-${range.maxIv}`;
     const patchRamAddress = 0x02073f48;
-    const ivPatch = buildIvPatch(patchRamAddress);
+    const ivPatch = buildIvPatch(patchRamAddress, range.minIv, range.maxIv);
+    const legacyIvPatch = buildLegacyIv15To31Patch(patchRamAddress);
     const preferredAt = arm9Offset(rom, patchRamAddress, ivPatch.length);
-    let located = locateNearby(rom, preferredAt, IV_ORIGINAL, ivPatch, 0x200, "Random IVs 15-31");
+    let located = locateNearby(rom, preferredAt, IV_ORIGINAL, ivPatch, 0x200, label);
     if (
       located.offset === preferredAt &&
       !bytesEqual(rom, preferredAt, IV_ORIGINAL) &&
       !bytesEqual(rom, preferredAt, ivPatch) &&
+      !bytesEqual(rom, preferredAt, legacyIvPatch) &&
       !bytesEqual(rom, preferredAt, IV_BAD_PATCH)
     ) {
       const badHits = findNeedle(rom, IV_BAD_PATCH, preferredAt - 0x200, preferredAt + 0x200);
@@ -1467,64 +1917,124 @@
     const patchAt = located.offset;
     const arm9 = getArm9Info(rom);
     const actualPatchRamAddress = arm9.loadAddress + (patchAt - arm9.fileOffset);
-    const actualIvPatch = buildIvPatch(actualPatchRamAddress);
+    const actualIvPatch = buildIvPatch(actualPatchRamAddress, range.minIv, range.maxIv);
+    const actualLegacyIvPatch = buildLegacyIv15To31Patch(actualPatchRamAddress);
+    const existingRange = existingIvPatchRangeAt(rom, patchAt, actualPatchRamAddress);
     if (bytesEqual(rom, patchAt, actualIvPatch)) {
       log.push(
-        `Random IVs 15-31: already patched${
+        `${label}: already patched${
           located.usedFallback ? ` (fallback scan found ${hex(patchAt)})` : ""
         }.`
       );
       return;
     }
-    if (!bytesEqual(rom, patchAt, IV_ORIGINAL) && !bytesEqual(rom, patchAt, IV_BAD_PATCH) && !force) {
+    if (
+      !bytesEqual(rom, patchAt, IV_ORIGINAL) &&
+      !bytesEqual(rom, patchAt, IV_BAD_PATCH) &&
+      !bytesEqual(rom, patchAt, actualLegacyIvPatch) &&
+      !existingRange &&
+      !force
+    ) {
       const found = Array.from(rom.slice(patchAt, patchAt + actualIvPatch.length))
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join(" ");
       throw new PatchError(
-        `Random IVs 15-31 sanity check failed at ${hex(patchAt)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+        `${label} sanity check failed at ${hex(patchAt)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
       );
     }
     const repairedBrokenPatch = bytesEqual(rom, patchAt, IV_BAD_PATCH);
+    const replacedLegacyPatch = bytesEqual(rom, patchAt, actualLegacyIvPatch);
     writeBytes(rom, patchAt, actualIvPatch);
+    const action = repairedBrokenPatch
+      ? "repaired old broken patch and wrote"
+      : replacedLegacyPatch
+        ? "updated legacy 15-31 patch with"
+        : existingRange
+          ? `updated existing ${existingRange.minIv}-${existingRange.maxIv} patch with`
+          : "wrote";
     log.push(
-      `Random IVs 15-31: ${repairedBrokenPatch ? "repaired old broken patch and wrote" : "wrote"} ${actualIvPatch.length} bytes at ARM9 ${hex(patchAt)}${
+      `${label}: ${action} ${actualIvPatch.length} bytes at ARM9 ${hex(patchAt)}${
         located.usedFallback ? " (fallback scan)" : ""
       }.`
     );
   }
 
-  function patchWildNatures(rom, force, log) {
-    const preferred = overlayOffset(rom, OVERLAY_6, 0x39a4, WILD_NATURE_PATCH.length);
+  function patchWildNatures(rom, force, log, options = {}) {
+    const allowed = natureAllowedOption(options);
+    const allowedNames = allowed.map((nature) => NATURE_NAMES[nature]);
+    const preferred = overlayOffset(rom, OVERLAY_6, 0x39a4, WILD_NATURE_ORIGINAL.length);
+    const preferredPatch = buildWildNaturePatch(
+      preferred.overlay.loadAddress + (preferred.offset - preferred.overlay.start),
+      allowed
+    );
     const located = locateNearby(
       rom,
       preferred.offset,
       WILD_NATURE_ORIGINAL,
-      WILD_NATURE_PATCH,
+      preferredPatch,
       0x200,
       "Wild nature filter"
     );
-    const offset = located.offset;
-    const state = requireBytes(
-      rom,
-      offset,
-      WILD_NATURE_ORIGINAL,
-      WILD_NATURE_PATCH,
-      force,
-      "Wild nature filter"
+    let offset = located.offset;
+    let usedFallback = located.usedFallback;
+    if (
+      offset === preferred.offset &&
+      !bytesEqual(rom, offset, WILD_NATURE_ORIGINAL) &&
+      !bytesEqual(rom, offset, preferredPatch) &&
+      !bytesEqual(rom, offset, WILD_NATURE_LEGACY_PATCH) &&
+      !parseWildNaturePatchAt(rom, offset)
+    ) {
+      const legacyHits = findNeedle(
+        rom,
+        WILD_NATURE_LEGACY_PATCH,
+        preferred.offset - 0x200,
+        preferred.offset + 0x200
+      );
+      const generatedHits = findWildNaturePatch(
+        rom,
+        preferred.offset - 0x200,
+        preferred.offset + 0x200
+      ).map((hit) => hit.offset);
+      const hits = Array.from(new Set([...legacyHits, ...generatedHits]));
+      if (hits.length === 1) {
+        offset = hits[0];
+        usedFallback = true;
+      }
+    }
+
+    const actualPatch = buildWildNaturePatch(
+      preferred.overlay.loadAddress + (offset - preferred.overlay.start),
+      allowed
     );
-    if (state === "already") {
+    const existingAllowed = parseWildNaturePatchAt(rom, offset);
+    const isLegacyPatch = bytesEqual(rom, offset, WILD_NATURE_LEGACY_PATCH);
+    if (bytesEqual(rom, offset, actualPatch)) {
       log.push(
-        `Wild nature filter: already patched${
-          located.usedFallback ? ` (fallback scan found overlay 6+${hex(offset - preferred.overlay.start)})` : ""
+        `Wild nature filter: already patched for ${allowed.length} allowed nature(s): ${allowedNames.join(", ")}${
+          usedFallback ? ` (fallback scan found overlay 6+${hex(offset - preferred.overlay.start)})` : ""
         }.`
       );
       return;
     }
-    writeBytes(rom, offset, WILD_NATURE_PATCH);
+    if (!bytesEqual(rom, offset, WILD_NATURE_ORIGINAL) && !isLegacyPatch && !existingAllowed && !force) {
+      const found = Array.from(rom.slice(offset, offset + WILD_NATURE_ORIGINAL.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Wild nature filter sanity check failed at ${hex(offset)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    writeBytes(rom, offset, actualPatch);
     log.push(
-      `Wild nature filter: replaced overlay 6 wild nature routine at +${hex(
-        offset - preferred.overlay.start
-      )}${located.usedFallback ? " (fallback scan)" : ""}.`
+      `Wild nature filter: ${
+        isLegacyPatch
+          ? "updated legacy patch"
+          : existingAllowed
+            ? `updated existing ${existingAllowed.length}-nature patch`
+            : "replaced overlay 6 wild nature routine"
+      } at +${hex(offset - preferred.overlay.start)} with ${allowed.length} allowed nature(s): ${allowedNames.join(
+        ", "
+      )}${usedFallback ? " (fallback scan)" : ""}.`
     );
   }
 
@@ -1706,6 +2216,56 @@
       return 4;
     }
     return Math.max(2, Math.min(10, Math.trunc(value)));
+  }
+
+  function frameRateModeOption(options) {
+    return options && options.frameRateMode === "global" ? "global" : "battle";
+  }
+
+  function frameRateModeText(options) {
+    return frameRateModeOption(options) === "global" ? "global" : "battle";
+  }
+
+  function ivRangeOption(options) {
+    const minValue = Number(options && options.ivMin);
+    const maxValue = Number(options && options.ivMax);
+    let minIv = Number.isFinite(minValue) ? Math.trunc(minValue) : 15;
+    let maxIv = Number.isFinite(maxValue) ? Math.trunc(maxValue) : 31;
+    minIv = Math.max(0, Math.min(31, minIv));
+    maxIv = Math.max(0, Math.min(31, maxIv));
+    if (minIv > maxIv) {
+      [minIv, maxIv] = [maxIv, minIv];
+    }
+    return { minIv, maxIv };
+  }
+
+  function ivRangeText(options) {
+    const { minIv, maxIv } = ivRangeOption(options);
+    return `${minIv}-${maxIv}`;
+  }
+
+  function natureAllowedOption(options) {
+    const source = Array.isArray(options && options.natureAllowed)
+      ? options.natureAllowed
+      : DEFAULT_ALLOWED_NATURES;
+    const allowed = Array.from(
+      new Set(
+        source
+          .map((nature) => Number(nature))
+          .filter((nature) => Number.isFinite(nature))
+          .map((nature) => Math.trunc(nature))
+          .filter((nature) => nature >= 0 && nature < NATURE_NAMES.length)
+      )
+    ).sort((a, b) => a - b);
+    if (!allowed.length) {
+      throw new PatchError("Wild nature filter needs at least one allowed nature.");
+    }
+    return allowed;
+  }
+
+  function natureMaskText(options) {
+    const mask = natureAllowedOption(options).reduce((value, nature) => value | (1 << nature), 0);
+    return mask.toString(16).toUpperCase();
   }
 
   function shinyThresholdOption(options) {
@@ -2242,6 +2802,7 @@
   }
 
   const PATCH_IMPLS = {
+    frameRate: patchFrameRateUnlock,
     shinyOdds: patchShinyOdds,
     noCrits: patchNoCrits,
     iv15_31: patchIv15To31,
@@ -2302,12 +2863,18 @@
     const base = inputName.slice(0, dot) || "platinum";
     const suffix = patchIds
       .map((id) =>
-        id === "text4x"
+        id === "frameRate"
+          ? `framerate${frameRateModeText(options)}`
+          : id === "text4x"
           ? `text${textCharsPerFrameOption(options)}x`
           : id === "shinyOdds"
             ? options && options.shinyOddsPercent !== undefined
               ? `shiny${shinyOddsPercentOption(options)}pct`
               : `shinyT${shinyThresholdOption(options)}`
+            : id === "iv15_31"
+              ? `iv${ivRangeText(options)}`
+              : id === "wildNatures"
+                ? `natures${natureMaskText(options)}`
             : id.replace(/_/g, "")
       )
       .join(".");
@@ -2333,10 +2900,17 @@
     const romStatus = document.getElementById("romStatus");
     const fileSubtitle = document.getElementById("fileSubtitle");
     const patchGrid = document.getElementById("patchGrid");
+    const frameRateModeInputs = Array.from(document.querySelectorAll("input[name='frameRateMode']"));
     const textCharsPerFrameInput = document.getElementById("textCharsPerFrame");
     const textCharsPerFrameValue = document.getElementById("textCharsPerFrameValue");
     const shinyOddsPercentInput = document.getElementById("shinyOddsPercent");
     const shinyOddsValue = document.getElementById("shinyOddsValue");
+    const ivMinInput = document.getElementById("ivMin");
+    const ivMinValue = document.getElementById("ivMinValue");
+    const ivMaxInput = document.getElementById("ivMax");
+    const ivMaxValue = document.getElementById("ivMaxValue");
+    const natureGrid = document.getElementById("natureGrid");
+    const natureCountValue = document.getElementById("natureCountValue");
     const fairyTypeInput = document.getElementById("fairyTypePatch");
     const fairyPokemonTypesInput = document.getElementById("fairyPokemonTypesPatch");
 
@@ -2361,23 +2935,39 @@
     function selectedPatches() {
       return Array.from(patchGrid.querySelectorAll("input[type='checkbox']:checked")).map(
         (input) => input.value
+      ).filter((patchId) => PATCH_IMPLS[patchId]);
+    }
+
+    function selectedNatureIds() {
+      return Array.from(natureGrid.querySelectorAll("input[type='checkbox']:checked")).map(
+        (input) => Number(input.value)
       );
     }
 
     function patchOptions() {
       return {
         force: forceInput.checked,
+        frameRateMode:
+          (frameRateModeInputs.find((input) => input.checked) || frameRateModeInputs[0]).value,
         textCharsPerFrame: textCharsPerFrameOption({
           textCharsPerFrame: textCharsPerFrameInput.value,
         }),
         shinyOddsPercent: shinyOddsPercentOption({
           shinyOddsPercent: shinyOddsPercentInput.value,
         }),
+        ...ivRangeOption({
+          ivMin: ivMinInput.value,
+          ivMax: ivMaxInput.value,
+        }),
+        natureAllowed: selectedNatureIds(),
         debugFairyBattleTest: Boolean(CONSOLE_CONFIG.debugFairyBattleTest),
       };
     }
 
     function patchLabel(id, options) {
+      if (id === "frameRate") {
+        return `${PATCHES[id]} (${frameRateModeOption(options) === "global" ? "global" : "battle only"})`;
+      }
       if (id === "text4x") {
         return `${PATCHES[id]} (${textCharsPerFrameOption(options)}x)`;
       }
@@ -2387,6 +2977,12 @@
           return `${PATCHES[id]} (${shinyOddsPercentOption(options)}%, ${threshold}/65536)`;
         }
         return `${PATCHES[id]} (${threshold}/65536, ${shinyOddsLabel(threshold)})`;
+      }
+      if (id === "iv15_31") {
+        return `${PATCHES[id]} (${ivRangeText(options)})`;
+      }
+      if (id === "wildNatures") {
+        return `${PATCHES[id]} (${natureAllowedOption(options).length} allowed)`;
       }
       return PATCHES[id];
     }
@@ -2406,8 +3002,81 @@
       shinyOddsValue.textContent = `${percent}% - ${threshold}/65536`;
     }
 
+    function updateIvRangeValue(changedInput) {
+      let minIv = Number(ivMinInput.value);
+      let maxIv = Number(ivMaxInput.value);
+      if (changedInput === ivMinInput && minIv > maxIv) {
+        maxIv = minIv;
+        ivMaxInput.value = String(maxIv);
+      } else if (changedInput === ivMaxInput && maxIv < minIv) {
+        minIv = maxIv;
+        ivMinInput.value = String(minIv);
+      }
+      const range = ivRangeOption({ ivMin: minIv, ivMax: maxIv });
+      ivMinInput.value = String(range.minIv);
+      ivMaxInput.value = String(range.maxIv);
+      ivMinValue.textContent = String(range.minIv);
+      ivMaxValue.textContent = String(range.maxIv);
+    }
+
+    function renderNatureButtons() {
+      natureGrid.textContent = "";
+      const corner = document.createElement("div");
+      corner.className = "nature-corner";
+      corner.setAttribute("aria-hidden", "true");
+      natureGrid.append(corner);
+
+      for (const stat of NATURE_STAT_GRID) {
+        const header = document.createElement("div");
+        header.className = `nature-axis nature-axis-down nature-stat-${stat.key}`;
+        header.textContent = `↓ ${stat.label}`;
+        natureGrid.append(header);
+      }
+
+      for (const boosted of NATURE_STAT_GRID) {
+        const rowHeader = document.createElement("div");
+        rowHeader.className = `nature-axis nature-axis-up nature-stat-${boosted.key}`;
+        rowHeader.textContent = `↑ ${boosted.label}`;
+        natureGrid.append(rowHeader);
+
+        for (const hindered of NATURE_STAT_GRID) {
+          const nature = boosted.natureIndex * 5 + hindered.natureIndex;
+          const label = document.createElement("label");
+          label.className = "nature-chip";
+          if (boosted.natureIndex === hindered.natureIndex) {
+            label.classList.add("nature-neutral");
+          }
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.value = String(nature);
+          input.checked = DEFAULT_ALLOWED_NATURES.includes(nature);
+          input.setAttribute(
+            "aria-label",
+            `${NATURE_NAMES[nature]}: raises ${boosted.label}, lowers ${hindered.label}`
+          );
+          const span = document.createElement("span");
+          span.textContent = NATURE_NAMES[nature];
+          span.title = `${NATURE_NAMES[nature]}: raises ${boosted.label}, lowers ${hindered.label}`;
+          label.append(input, span);
+          natureGrid.append(label);
+        }
+      }
+    }
+
+    function updateNatureCount(changedInput) {
+      const checked = selectedNatureIds();
+      if (!checked.length && changedInput) {
+        changedInput.checked = true;
+        checked.push(Number(changedInput.value));
+      }
+      natureCountValue.textContent = `${checked.length} allowed`;
+    }
+
+    renderNatureButtons();
     updateTextSpeedValue();
     updateShinyOddsValue();
+    updateIvRangeValue();
+    updateNatureCount();
     textCharsPerFrameInput.addEventListener("input", () => {
       updateTextSpeedValue();
       clearDownload();
@@ -2415,6 +3084,20 @@
     shinyOddsPercentInput.addEventListener("input", () => {
       updateShinyOddsValue();
       clearDownload();
+    });
+    ivMinInput.addEventListener("input", () => {
+      updateIvRangeValue(ivMinInput);
+      clearDownload();
+    });
+    ivMaxInput.addEventListener("input", () => {
+      updateIvRangeValue(ivMaxInput);
+      clearDownload();
+    });
+    natureGrid.addEventListener("change", (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.type === "checkbox") {
+        updateNatureCount(event.target);
+        clearDownload();
+      }
     });
     fairyPokemonTypesInput.addEventListener("change", () => {
       if (fairyPokemonTypesInput.checked) {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=18" />
+    <link rel="stylesheet" href="./styles.css?v=23" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v18</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v23</div>
       </section>
 
       <section class="panel upload-panel">
@@ -29,7 +29,7 @@
           <h2>Patches</h2>
           <label class="force-toggle">
             <input id="forceInput" type="checkbox" />
-            <span>Allow compatible modified bytes</span>
+            <span>Romhack Compatability Mode</span>
           </label>
         </div>
 
@@ -45,6 +45,26 @@
                 <input id="fairyPokemonTypesPatch" type="checkbox" value="fairyPokemonTypes" />
                 <span>Update Pokemon Types</span>
               </label>
+            </div>
+          </div>
+
+          <div class="patch-card patch-card-config">
+            <input id="frameRatePatch" type="checkbox" value="frameRate" />
+            <div class="patch-body">
+              <label class="patch-title" for="frameRatePatch">
+                <strong>Unlock framerate</strong>
+                <small>Skips the extra VBlank wait used by slower game contexts. Experimental.</small>
+              </label>
+              <div class="radio-row" role="radiogroup" aria-label="Framerate unlock mode">
+                <label>
+                  <input type="radio" name="frameRateMode" value="battle" checked />
+                  <span>Battle only</span>
+                </label>
+                <label>
+                  <input type="radio" name="frameRateMode" value="global" />
+                  <span>Global</span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -90,21 +110,44 @@
             </span>
           </label>
 
-          <label class="patch-card">
-            <input type="checkbox" value="iv15_31" />
-            <span>
-              <strong>Random IVs 15-31</strong>
-              <small>Rerolls each random IV until it lands in the upper half.</small>
-            </span>
-          </label>
+          <div class="patch-card patch-card-config">
+            <input id="ivRangePatch" type="checkbox" value="iv15_31" />
+            <div class="patch-body">
+              <label class="patch-title" for="ivRangePatch">
+                <strong>Random IV range</strong>
+                <small>Rerolls each random IV until it lands inside the selected range.</small>
+              </label>
+              <div class="range-control">
+                <label for="ivMin">
+                  <span>Minimum</span>
+                  <output id="ivMinValue" for="ivMin">15</output>
+                </label>
+                <input id="ivMin" type="range" min="0" max="31" step="1" value="15" />
+              </div>
+              <div class="range-control">
+                <label for="ivMax">
+                  <span>Maximum</span>
+                  <output id="ivMaxValue" for="ivMax">31</output>
+                </label>
+                <input id="ivMax" type="range" min="0" max="31" step="1" value="31" />
+              </div>
+            </div>
+          </div>
 
-          <label class="patch-card">
-            <input type="checkbox" value="wildNatures" />
-            <span>
-              <strong>Filter wild natures</strong>
-              <small>Wild natures never lower Attack, Special Attack, or Speed.</small>
-            </span>
-          </label>
+          <div class="patch-card patch-card-config">
+            <input id="wildNaturesPatch" type="checkbox" value="wildNatures" />
+            <div class="patch-body">
+              <label class="patch-title" for="wildNaturesPatch">
+                <strong>Filter wild natures</strong>
+                <small>Only selected natures can be randomly generated for wild Pokemon.</small>
+              </label>
+              <div class="nature-heading">
+                <span>Allowed natures</span>
+                <output id="natureCountValue">25 allowed</output>
+              </div>
+              <div class="nature-grid" id="natureGrid"></div>
+            </div>
+          </div>
 
           <label class="patch-card">
             <input type="checkbox" value="movementSpeed" />
@@ -148,6 +191,6 @@
       </footer>
     </main>
 
-    <script src="./app.js?v=18"></script>
+    <script src="./app.js?v=23"></script>
   </body>
 </html>

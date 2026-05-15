@@ -215,11 +215,50 @@ input[type="file"] {
   accent-color: var(--accent);
 }
 
+.nested-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nested-toggle input {
+  accent-color: var(--accent);
+}
+
 .actions {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.output-name {
+  display: grid;
+  gap: 5px;
+  min-width: min(320px, 100%);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.output-name input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.output-name input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(35, 104, 162, 0.18);
 }
 
 button,
@@ -259,6 +298,26 @@ button:disabled {
 
 .log-panel {
   margin-bottom: 0;
+}
+
+.credits {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.credits h2 {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.credits p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.credits a {
+  color: var(--accent);
 }
 
 pre {

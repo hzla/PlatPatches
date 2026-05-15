@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=12" />
+    <link rel="stylesheet" href="./styles.css?v=16" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v12</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v16</div>
       </section>
 
       <section class="panel upload-panel">
@@ -45,6 +45,23 @@
                 <input id="fairyPokemonTypesPatch" type="checkbox" value="fairyPokemonTypes" />
                 <span>Update Pokemon Types</span>
               </label>
+            </div>
+          </div>
+
+          <div class="patch-card patch-card-config">
+            <input id="shinyOddsPatch" type="checkbox" value="shinyOdds" />
+            <div class="patch-body">
+              <label class="patch-title" for="shinyOddsPatch">
+                <strong>Shiny odds</strong>
+                <small>Changes the global shiny odds from 0% to 100%.</small>
+              </label>
+              <div class="range-control">
+                <label for="shinyOddsPercent">
+                  <span>Odds</span>
+                  <output id="shinyOddsValue" for="shinyOddsPercent">1% - 655/65536</output>
+                </label>
+                <input id="shinyOddsPercent" type="range" min="0" max="100" step="1" value="1" />
+              </div>
             </div>
           </div>
 
@@ -131,6 +148,6 @@
       </footer>
     </main>
 
-    <script src="./app.js?v=12"></script>
+    <script src="./app.js?v=16"></script>
   </body>
 </html>

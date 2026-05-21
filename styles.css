@@ -150,11 +150,12 @@ input[type="file"] {
 }
 
 .patch-card {
+  position: relative;
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 10px;
   min-height: 92px;
-  padding: 14px;
+  padding: 14px 46px 14px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
@@ -188,6 +189,32 @@ input[type="file"] {
   margin-top: 5px;
   color: var(--muted);
   line-height: 1.35;
+}
+
+.patch-info-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  padding: 0;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  background: #fbfcfe;
+  cursor: pointer;
+}
+
+.patch-info-button:hover {
+  border-color: rgba(35, 104, 162, 0.45);
+  color: #ffffff;
+  background: var(--accent);
 }
 
 .range-control {
@@ -470,6 +497,86 @@ button:disabled {
 
 .credits a {
   color: var(--accent);
+}
+
+.info-modal {
+  width: min(640px, calc(100% - 32px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--text);
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.info-modal::backdrop {
+  background: rgba(17, 24, 32, 0.42);
+}
+
+.modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-heading h2 {
+  font-size: 20px;
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  background: #ffffff;
+}
+
+.modal-close:hover {
+  color: var(--text);
+  background: #f5f7fa;
+}
+
+.info-modal p,
+.info-modal h3,
+.info-modal ul {
+  margin-left: 18px;
+  margin-right: 18px;
+}
+
+.info-modal p {
+  margin-top: 16px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.info-modal h3 {
+  margin-top: 18px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.info-modal ul {
+  margin-top: 0;
+  margin-bottom: 18px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.info-modal li + li {
+  margin-top: 6px;
 }
 
 pre {

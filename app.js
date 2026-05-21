@@ -11,6 +11,8 @@
   const PATCHES = {
     frameRate: "Unlock framerate",
     shinyOdds: "Shiny odds",
+    critOdds: "Critical hit odds",
+    critDamage: "Critical damage 1.5x",
     noCrits: "No critical hits",
     iv15_31: "Random IV range",
     wildNatures: "Filter wild natures",
@@ -21,7 +23,115 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v23";
+  const APP_VERSION = "v25";
+  const PATCH_INFO = {
+    fairyType: {
+      title: "Fairy Patch",
+      summary:
+        "Adds Fairy as the old ??? type slot. This covers battle effectiveness and the visible type icons. The optional Pokemon type checkbox retags a small list of Pokemon without touching their stats, moves, or abilities.",
+      regions: [
+        "ARM9 helper: RAM 0x020F9400-0x020F943F / ROM 0x000FD400-0x000FD43F.",
+        "Overlay 16 type table: +0x33B94-0x33CE2.",
+        "Overlay 16 read hooks: +0x1A01A/+0x1A074 clean, +0x1A022/+0x1A07C pkaizo.",
+        "Overlay 16 loop-step edits: +0x19FB6, +0x1A084, +0x1A766 clean; shifted +0x8 in pkaizo.",
+        "Overlay 21 Pokedex display routing: +0xE408-0xE477.",
+        "NARC assets: battle/graphic/pl_batt_obj.narc members 74 and 236; resource/eng/zukan/zukan.narc members 88, 89, and 90.",
+        "Optional Pokemon type update: bytes 6 and 7 of selected poketool/personal/pl_personal.narc entries.",
+      ],
+    },
+    frameRate: {
+      title: "Unlock framerate",
+      summary:
+        "Makes the game stop waiting on every other frame in selected contexts. Battle only is the safer option; global affects more of the game.",
+      regions: [
+        "Global mode: ARM9 RAM 0x02000DF8-0x02000DF9 / ROM 0x00004DF8-0x00004DF9.",
+        "Battle mode hook: ARM9 RAM 0x02000DF2-0x02000DF9 / ROM 0x00004DF2-0x00004DF9.",
+        "Battle mode helper: ARM9 RAM 0x020F93D0-0x020F93EB / ROM 0x000FD3D0-0x000FD3EB.",
+      ],
+    },
+    shinyOdds: {
+      title: "Shiny odds",
+      summary:
+        "Changes how often the game treats a Pokemon personality value as shiny. This is a global shiny check, not a wild-encounter-only edit.",
+      regions: [
+        "Simple threshold byte: ARM9 RAM 0x02075E50 / ROM 0x00079E50.",
+        "Advanced threshold rewrite: ARM9 RAM 0x02075E38-0x02075E63 / ROM 0x00079E38-0x00079E63.",
+      ],
+    },
+    critOdds: {
+      title: "Critical hit odds",
+      summary:
+        "Changes the base chance for critical hits. Vanilla is 1/16; the default here is 1/24. This does nothing if No critical hits is also enabled.",
+      regions: [
+        "Overlay 16 table: +0x33A60-0x33A64 clean, +0x33A7C-0x33A80 pkaizo.",
+        "Only the first byte is changed; the later stage divisors remain 08 04 03 02.",
+      ],
+    },
+    critDamage: {
+      title: "Critical damage 1.5x",
+      summary:
+        "Makes critical hits less swingy. Normal crits become 1.5x damage instead of 2x; Sniper crits become 2.25x instead of 3x.",
+      regions: [
+        "Overlay 16 normal damage hook: +0x62B8-0x62C3.",
+        "Overlay 16 Beat Up hook: +0xAD5A-0xAD65.",
+        "Overlay 16 helper cave: +0x34CA0-0x34CBB preferred; can fallback to another 0xFF fill run.",
+      ],
+    },
+    text4x: {
+      title: "Experimental text speed",
+      summary:
+        "Prints normal text faster than the built-in fast setting while trying to keep the normal text-box lifecycle intact. Some scripted text may still be picky.",
+      regions: [
+        "Force fast field helper: ARM9 RAM 0x02027AC0-0x02027AD9 / ROM 0x0002BAC0-0x0002BAD9.",
+        "Battle text-speed helper: overlay 16 +0x3CB0-0x3CD7.",
+        "Text-printer hook: ARM9 RAM 0x0201D97C-0x0201D983 / ROM 0x0002197C-0x00021983.",
+        "Text-printer helper: ARM9 RAM 0x020795E0-0x0207969B / ROM 0x0007D5E0-0x0007D69B preferred; can fallback to another fill run.",
+      ],
+    },
+    noCrits: {
+      title: "No critical hits",
+      summary:
+        "Turns off critical hits in battle. Use this instead of the odds slider if you want crits gone completely.",
+      regions: [
+        "Overlay 16 stub: +0x1FDA4-0x1FDA7 clean, +0x1FDC0-0x1FDC3 pkaizo.",
+        "Uses the critical-rate table as a nearby locator, so it tolerates the pkaizo +0x1C shift.",
+      ],
+    },
+    iv15_31: {
+      title: "Random IV range",
+      summary:
+        "Limits randomly generated IVs to the selected range. It rerolls each IV until it lands inside the min and max values.",
+      regions: [
+        "ARM9 RAM 0x02073F48-0x02073FCB / ROM 0x00077F48-0x00077FCB.",
+      ],
+    },
+    wildNatures: {
+      title: "Filter wild natures",
+      summary:
+        "Controls which natures wild Pokemon can generate with. If a nature is turned off, wild generation will keep trying until it gets an allowed one.",
+      regions: [
+        "Overlay 6 routine/table: +0x39A4-0x39FF.",
+      ],
+    },
+    movementSpeed: {
+      title: "Faster movement",
+      summary:
+        "Speeds up player walking, running, and cycling by changing the movement action constants used by the player.",
+      regions: [
+        "ARM9 constants: RAM 0x0205FE22, 0x0205FE3E, 0x0205FF92, 0x0205FFB0, 0x02060394, 0x020603A8, 0x020603AC, 0x020603B0.",
+        "May also repair older pointer-table edits around ARM9 RAM 0x020EF194-0x020EF53C if it sees the previous patcher version.",
+      ],
+    },
+    playerAccuracy: {
+      title: "Player accuracy bypass",
+      summary:
+        "Lets player-side moves skip the normal accuracy miss roll. It does not bypass immunities, Protect, or semi-invulnerable states.",
+      regions: [
+        "Overlay 16 trampoline: +0x140FA-0x1410B clean, +0x140FE-0x1410F pkaizo.",
+        "Overlay 16 helper: +0x34C68-0x34C83 preferred, +0x34C84-0x34C9F pkaizo observed; can fallback to another 0xFF fill run.",
+      ],
+    },
+  };
   const CONSOLE_CONFIG = {
     debugFairyBattleTest: false,
   };
@@ -1857,27 +1967,103 @@
     );
   }
 
-  function patchNoCrits(rom, force, log) {
-    const overlayId = OVERLAY_16;
-    const tableOffset = 0x33a60;
-    const functionOffset = 0x1fda4;
-    const tableNeedle = bytesFromHex("10 08 04 03 02");
-    const stub = bytesFromHex("01 20 70 47");
-    const expectedPrefix = bytesFromHex("f8 b5");
-    const overlay = getOverlayRange(rom, overlayId);
-    const expectedTable = overlay.start + tableOffset;
+  const CRIT_RATE_TABLE_REL = 0x33a60;
+  const CRIT_RATE_TABLE_TAIL = bytesFromHex("08 04 03 02");
 
-    let actualTable = expectedTable;
-    if (!bytesEqual(rom, expectedTable, tableNeedle)) {
-      const hits = findNeedle(rom, tableNeedle, expectedTable - 0x100, expectedTable + 0x100);
-      if (hits.length === 1) {
-        actualTable = hits[0];
-      } else if (!force) {
-        throw new PatchError("Could not uniquely locate the critical-hit rate table in overlay 16.");
-      }
+  function critBaseDivisorOption(options) {
+    const value = Number(options && options.critBaseDivisor);
+    if (!Number.isFinite(value)) {
+      return 24;
+    }
+    return Math.max(1, Math.min(255, Math.trunc(value)));
+  }
+
+  function critOddsLabel(divisor) {
+    return `1/${critBaseDivisorOption({ critBaseDivisor: divisor })} base`;
+  }
+
+  function matchesCritRateTable(data, offset) {
+    if (offset < 0 || offset + 5 > data.length) {
+      return false;
+    }
+    return data[offset] >= 1 && bytesEqual(data, offset + 1, CRIT_RATE_TABLE_TAIL);
+  }
+
+  function findCritRateTable(rom, overlay, preferredRel = CRIT_RATE_TABLE_REL) {
+    const preferred = overlay.start + preferredRel;
+    if (matchesCritRateTable(rom, preferred)) {
+      return { offset: preferred, usedFallback: false };
     }
 
-    const shift = actualTable - expectedTable;
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - 5; offset += 1) {
+      if (matchesCritRateTable(rom, offset)) {
+        hits.push(offset);
+      }
+    }
+    if (hits.length === 1) {
+      return { offset: hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Critical-hit rate table fallback scan found multiple candidates: ${hits
+          .map((offset) => `overlay 16+${hex(offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+    throw new PatchError("Could not locate the critical-hit rate table in overlay 16.");
+  }
+
+  function patchCritOdds(rom, force, log, options = {}) {
+    const divisor = critBaseDivisorOption(options);
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const table = findCritRateTable(rom, overlay);
+    const currentDivisor = rom[table.offset];
+    const rel = table.offset - overlay.start;
+    const ramAddress = overlay.loadAddress + rel;
+
+    if (currentDivisor !== 16 && currentDivisor !== divisor && !force) {
+      throw new PatchError(
+        `Critical hit odds already has base divisor ${currentDivisor} at overlay 16+${hex(
+          rel
+        )}. Enable compatible modified bytes to replace it.`
+      );
+    }
+    if (currentDivisor === divisor) {
+      log.push(
+        `Critical hit odds: already ${critOddsLabel(divisor)} at overlay 16+${hex(
+          rel
+        )} / RAM ${hex(ramAddress)}${table.usedFallback ? " (fallback scan)" : ""}.`
+      );
+      return;
+    }
+
+    rom[table.offset] = divisor;
+    log.push(
+      `Critical hit odds: wrote ${critOddsLabel(divisor)} at overlay 16+${hex(
+        rel
+      )} / RAM ${hex(ramAddress)}${table.usedFallback ? " (fallback scan)" : ""}.`
+    );
+  }
+
+  function patchNoCrits(rom, force, log) {
+    const functionOffset = 0x1fda4;
+    const stub = bytesFromHex("01 20 70 47");
+    const expectedPrefix = bytesFromHex("f8 b5");
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    let table;
+    try {
+      table = findCritRateTable(rom, overlay);
+    } catch (error) {
+      if (!force) {
+        throw error;
+      }
+      table = { offset: overlay.start + CRIT_RATE_TABLE_REL, usedFallback: false };
+    }
+
+    const shift = table.offset - (overlay.start + CRIT_RATE_TABLE_REL);
     const patchAt = overlay.start + functionOffset + shift;
     if (bytesEqual(rom, patchAt, stub)) {
       log.push("No critical hits: already patched.");
@@ -1889,7 +2075,7 @@
     writeBytes(rom, patchAt, stub);
     log.push(
       `No critical hits: wrote stub at overlay 16+${hex(functionOffset + shift)}${
-        shift ? ` (fallback scan, shift ${shift > 0 ? "+" : ""}${hex(Math.abs(shift))})` : ""
+        shift || table.usedFallback ? ` (fallback scan, shift ${shift > 0 ? "+" : ""}${hex(Math.abs(shift))})` : ""
       }.`
     );
   }
@@ -2713,6 +2899,170 @@
     return runs[0];
   }
 
+  const CRIT_DAMAGE_MULTIPLY_ORIGINAL = bytesFromHex("08 1c 0c 30 6a 58 28 58 50 43 68 50");
+  const CRIT_DAMAGE_HOOK_TAIL = bytesFromHex("c0 46 c0 46 c0 46 c0 46");
+  const CRIT_DAMAGE_HELPER = bytesFromHex(`
+    08 1c 0c 30 6a 58 28 58 01 28 05 d9 50 43 03 23
+    58 43 80 08 68 50 70 47 6a 50 70 47
+  `);
+
+  function critDamageHook(fromAddress, helperAddress) {
+    return padBytes(new Uint8Array(thumbBl(fromAddress, helperAddress)), CRIT_DAMAGE_MULTIPLY_ORIGINAL.length);
+  }
+
+  function critDamageHookTarget(rom, overlay, hookAt) {
+    if (!bytesEqual(rom, hookAt + 4, CRIT_DAMAGE_HOOK_TAIL)) {
+      return null;
+    }
+    const hookAddress = overlay.loadAddress + (hookAt - overlay.start);
+    const helperAddress = decodeThumbBl(hookAddress, rom, hookAt);
+    if (helperAddress == null) {
+      return null;
+    }
+    const helperAt = overlay.start + (helperAddress - overlay.loadAddress);
+    if (helperAt < overlay.start || helperAt + CRIT_DAMAGE_HELPER.length > overlay.end) {
+      return null;
+    }
+    return bytesEqual(rom, helperAt, CRIT_DAMAGE_HELPER)
+      ? { helperAt, helperAddress }
+      : null;
+  }
+
+  function findCritDamageSite(rom, overlay, rel, label) {
+    const preferred = overlay.start + rel;
+    const preferredHook = critDamageHookTarget(rom, overlay, preferred);
+    if (bytesEqual(rom, preferred, CRIT_DAMAGE_MULTIPLY_ORIGINAL) || preferredHook) {
+      return { offset: preferred, usedFallback: false, hook: preferredHook };
+    }
+
+    const start = Math.max(overlay.start, preferred - 0x200);
+    const end = Math.min(overlay.end, preferred + 0x200);
+    const hits = findNeedle(rom, CRIT_DAMAGE_MULTIPLY_ORIGINAL, start, end);
+    const hookHits = [];
+    for (let offset = start; offset <= end - CRIT_DAMAGE_MULTIPLY_ORIGINAL.length; offset += 2) {
+      const hook = critDamageHookTarget(rom, overlay, offset);
+      if (hook) {
+        hookHits.push({ offset, hook });
+      }
+    }
+
+    if (hits.length + hookHits.length === 1) {
+      if (hits.length) {
+        return { offset: hits[0], usedFallback: true, hook: null };
+      }
+      return { offset: hookHits[0].offset, usedFallback: true, hook: hookHits[0].hook };
+    }
+    if (hits.length + hookHits.length > 1) {
+      throw new PatchError(
+        `${label} fallback scan found multiple candidates: ${[...hits, ...hookHits.map((hit) => hit.offset)]
+          .map((offset) => `overlay 16+${hex(offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hook: null };
+  }
+
+  function patchCritDamage15(rom, force, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const sites = [
+      { label: "normal damage", rel: 0x62b8 },
+      { label: "Beat Up damage", rel: 0xad5a },
+    ].map((site) => ({ ...site, ...findCritDamageSite(rom, overlay, site.rel, site.label) }));
+    const existingHelpers = Array.from(
+      new Set(sites.map((site) => site.hook && site.hook.helperAt).filter((offset) => offset != null))
+    );
+    const preferredCaveRel = 0x34ca0;
+    const preferredCaveAt = overlay.start + preferredCaveRel;
+    let caveAt = existingHelpers.length === 1 ? existingHelpers[0] : preferredCaveAt;
+    let caveFallback = caveAt !== preferredCaveAt;
+
+    if (existingHelpers.length > 1) {
+      throw new PatchError("Critical damage 1.5x found multiple existing helper locations.");
+    }
+    if (!existingHelpers.length && !bytesEqual(rom, caveAt, CRIT_DAMAGE_HELPER)) {
+      const caveExpected = new Uint8Array(CRIT_DAMAGE_HELPER.length).fill(0xff);
+      if (!bytesEqual(rom, caveAt, caveExpected)) {
+        const dynamicCave = findFillRun(
+          rom,
+          overlay.start,
+          overlay.end,
+          0xff,
+          CRIT_DAMAGE_HELPER.length,
+          preferredCaveAt
+        );
+        if (dynamicCave !== -1) {
+          caveAt = dynamicCave;
+          caveFallback = true;
+        } else if (!force) {
+          throw new PatchError(
+            `Critical damage 1.5x code cave sanity check failed at overlay 16+${hex(
+              preferredCaveRel
+            )}. Enable compatible modified bytes to patch anyway.`
+          );
+        }
+      }
+    }
+
+    const caveRel = caveAt - overlay.start;
+    const caveAddress = overlay.loadAddress + caveRel;
+    const caveAlready = bytesEqual(rom, caveAt, CRIT_DAMAGE_HELPER);
+    const patchedSites = sites.map((site) => ({
+      ...site,
+      hookBytes: critDamageHook(overlay.loadAddress + (site.offset - overlay.start), caveAddress),
+    }));
+    const allSitesAlready = patchedSites.every((site) => bytesEqual(rom, site.offset, site.hookBytes));
+
+    if (caveAlready && allSitesAlready) {
+      log.push(
+        `Critical damage 1.5x: already patched; helper at overlay 16+${hex(caveRel)}${
+          caveFallback || sites.some((site) => site.usedFallback) ? " (fallback scan)" : ""
+        }.`
+      );
+      return;
+    }
+
+    for (const site of patchedSites) {
+      if (
+        !bytesEqual(rom, site.offset, CRIT_DAMAGE_MULTIPLY_ORIGINAL) &&
+        !bytesEqual(rom, site.offset, site.hookBytes) &&
+        !force
+      ) {
+        const found = Array.from(rom.slice(site.offset, site.offset + CRIT_DAMAGE_MULTIPLY_ORIGINAL.length))
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(" ");
+        throw new PatchError(
+          `Critical damage 1.5x ${site.label} sanity check failed at overlay 16+${hex(
+            site.offset - overlay.start
+          )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+        );
+      }
+    }
+
+    if (!caveAlready) {
+      writeBytes(rom, caveAt, CRIT_DAMAGE_HELPER);
+    }
+    for (const site of patchedSites) {
+      writeBytes(rom, site.offset, site.hookBytes);
+    }
+
+    const siteText = patchedSites
+      .map((site) => `${site.label} overlay 16+${hex(site.offset - overlay.start)}`)
+      .join(", ");
+    const notes = [];
+    if (sites.some((site) => site.usedFallback)) {
+      notes.push("site fallback scan");
+    }
+    if (caveFallback) {
+      notes.push("code-cave fallback scan");
+    }
+    log.push(
+      `Critical damage 1.5x: hooked ${siteText}; helper at overlay 16+${hex(caveRel)} / RAM ${hex(
+        caveAddress
+      )}${notes.length ? ` (${notes.join(", ")})` : ""}.`
+    );
+  }
+
   function patchPlayerAccuracy(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
     const expectedRel = 0x140fa;
@@ -2804,6 +3154,8 @@
   const PATCH_IMPLS = {
     frameRate: patchFrameRateUnlock,
     shinyOdds: patchShinyOdds,
+    critOdds: patchCritOdds,
+    critDamage: patchCritDamage15,
     noCrits: patchNoCrits,
     iv15_31: patchIv15To31,
     wildNatures: patchWildNatures,
@@ -2871,6 +3223,10 @@
             ? options && options.shinyOddsPercent !== undefined
               ? `shiny${shinyOddsPercentOption(options)}pct`
               : `shinyT${shinyThresholdOption(options)}`
+            : id === "critOdds"
+              ? `crit1in${critBaseDivisorOption(options)}`
+            : id === "critDamage"
+              ? "crit15x"
             : id === "iv15_31"
               ? `iv${ivRangeText(options)}`
               : id === "wildNatures"
@@ -2900,11 +3256,18 @@
     const romStatus = document.getElementById("romStatus");
     const fileSubtitle = document.getElementById("fileSubtitle");
     const patchGrid = document.getElementById("patchGrid");
+    const patchInfoModal = document.getElementById("patchInfoModal");
+    const patchInfoTitle = document.getElementById("patchInfoTitle");
+    const patchInfoSummary = document.getElementById("patchInfoSummary");
+    const patchInfoRegions = document.getElementById("patchInfoRegions");
+    const patchInfoClose = document.getElementById("patchInfoClose");
     const frameRateModeInputs = Array.from(document.querySelectorAll("input[name='frameRateMode']"));
     const textCharsPerFrameInput = document.getElementById("textCharsPerFrame");
     const textCharsPerFrameValue = document.getElementById("textCharsPerFrameValue");
     const shinyOddsPercentInput = document.getElementById("shinyOddsPercent");
     const shinyOddsValue = document.getElementById("shinyOddsValue");
+    const critBaseDivisorInput = document.getElementById("critBaseDivisor");
+    const critOddsValue = document.getElementById("critOddsValue");
     const ivMinInput = document.getElementById("ivMin");
     const ivMinValue = document.getElementById("ivMinValue");
     const ivMaxInput = document.getElementById("ivMax");
@@ -2955,6 +3318,9 @@
         shinyOddsPercent: shinyOddsPercentOption({
           shinyOddsPercent: shinyOddsPercentInput.value,
         }),
+        critBaseDivisor: critBaseDivisorOption({
+          critBaseDivisor: critBaseDivisorInput.value,
+        }),
         ...ivRangeOption({
           ivMin: ivMinInput.value,
           ivMax: ivMaxInput.value,
@@ -2978,6 +3344,9 @@
         }
         return `${PATCHES[id]} (${threshold}/65536, ${shinyOddsLabel(threshold)})`;
       }
+      if (id === "critOdds") {
+        return `${PATCHES[id]} (${critOddsLabel(critBaseDivisorOption(options))})`;
+      }
       if (id === "iv15_31") {
         return `${PATCHES[id]} (${ivRangeText(options)})`;
       }
@@ -3000,6 +3369,14 @@
       const threshold = shinyThresholdFromPercent(percent);
       shinyOddsPercentInput.value = String(percent);
       shinyOddsValue.textContent = `${percent}% - ${threshold}/65536`;
+    }
+
+    function updateCritOddsValue() {
+      const divisor = critBaseDivisorOption({
+        critBaseDivisor: critBaseDivisorInput.value,
+      });
+      critBaseDivisorInput.value = String(divisor);
+      critOddsValue.textContent = critOddsLabel(divisor);
     }
 
     function updateIvRangeValue(changedInput) {
@@ -3072,9 +3449,64 @@
       natureCountValue.textContent = `${checked.length} allowed`;
     }
 
+    function openPatchInfo(patchId) {
+      const info = PATCH_INFO[patchId];
+      if (!info) {
+        return;
+      }
+      patchInfoTitle.textContent = info.title;
+      patchInfoSummary.textContent = info.summary;
+      patchInfoRegions.textContent = "";
+      for (const region of info.regions) {
+        const item = document.createElement("li");
+        item.textContent = region;
+        patchInfoRegions.append(item);
+      }
+      if (typeof patchInfoModal.showModal === "function") {
+        patchInfoModal.showModal();
+      } else {
+        patchInfoModal.setAttribute("open", "");
+      }
+    }
+
+    function closePatchInfo() {
+      if (typeof patchInfoModal.close === "function") {
+        patchInfoModal.close();
+      } else {
+        patchInfoModal.removeAttribute("open");
+      }
+    }
+
+    function addPatchInfoButtons() {
+      for (const card of patchGrid.querySelectorAll(".patch-card")) {
+        const patchInput = card.querySelector("input[type='checkbox'][value]");
+        if (!patchInput || !PATCH_INFO[patchInput.value]) {
+          continue;
+        }
+        const button = document.createElement("button");
+        button.className = "patch-info-button";
+        button.type = "button";
+        button.textContent = "i";
+        button.setAttribute("aria-label", `Info for ${PATCH_INFO[patchInput.value].title}`);
+        button.title = `Info for ${PATCH_INFO[patchInput.value].title}`;
+        button.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openPatchInfo(patchInput.value);
+        });
+        card.append(button);
+      }
+    }
+
     renderNatureButtons();
+    addPatchInfoButtons();
     updateTextSpeedValue();
     updateShinyOddsValue();
+    updateCritOddsValue();
     updateIvRangeValue();
     updateNatureCount();
     textCharsPerFrameInput.addEventListener("input", () => {
@@ -3083,6 +3515,10 @@
     });
     shinyOddsPercentInput.addEventListener("input", () => {
       updateShinyOddsValue();
+      clearDownload();
+    });
+    critBaseDivisorInput.addEventListener("input", () => {
+      updateCritOddsValue();
       clearDownload();
     });
     ivMinInput.addEventListener("input", () => {
@@ -3110,6 +3546,12 @@
         fairyPokemonTypesInput.checked = false;
       }
       clearDownload();
+    });
+    patchInfoClose.addEventListener("click", closePatchInfo);
+    patchInfoModal.addEventListener("click", (event) => {
+      if (event.target === patchInfoModal) {
+        closePatchInfo();
+      }
     });
     patchGrid.addEventListener("change", clearDownload);
     forceInput.addEventListener("change", clearDownload);

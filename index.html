@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=23" />
+    <link rel="stylesheet" href="./styles.css?v=25" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v23</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v25</div>
       </section>
 
       <section class="panel upload-panel">
@@ -84,6 +84,31 @@
               </div>
             </div>
           </div>
+
+          <div class="patch-card patch-card-config">
+            <input id="critOddsPatch" type="checkbox" value="critOdds" />
+            <div class="patch-body">
+              <label class="patch-title" for="critOddsPatch">
+                <strong>Critical hit odds</strong>
+                <small>Changes the base critical-hit chance divisor.</small>
+              </label>
+              <div class="range-control">
+                <label for="critBaseDivisor">
+                  <span>Base divisor</span>
+                  <output id="critOddsValue" for="critBaseDivisor">1/24 base</output>
+                </label>
+                <input id="critBaseDivisor" type="range" min="1" max="255" step="1" value="24" />
+              </div>
+            </div>
+          </div>
+
+          <label class="patch-card">
+            <input type="checkbox" value="critDamage" />
+            <span>
+              <strong>Critical damage 1.5x</strong>
+              <small>Normal crits deal 1.5x damage; Sniper crits scale to 2.25x.</small>
+            </span>
+          </label>
 
           <div class="patch-card patch-card-config">
             <input id="text4xPatch" type="checkbox" value="text4x" />
@@ -189,8 +214,18 @@
           (<a href="https://pokehacking.com/r/20071800" rel="noreferrer">pokehacking.com/r/20071800</a>)
         </p>
       </footer>
+
+      <dialog class="info-modal" id="patchInfoModal">
+        <div class="modal-heading">
+          <h2 id="patchInfoTitle">Patch info</h2>
+          <button class="modal-close" id="patchInfoClose" type="button" aria-label="Close patch info">×</button>
+        </div>
+        <p id="patchInfoSummary"></p>
+        <h3>Technical details</h3>
+        <ul id="patchInfoRegions"></ul>
+      </dialog>
     </main>
 
-    <script src="./app.js?v=23"></script>
+    <script src="./app.js?v=25"></script>
   </body>
 </html>

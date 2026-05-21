@@ -7,6 +7,8 @@ The patching is local browser-side JavaScript. No ROM data is uploaded.
 Included patches:
 
 - No critical hits
+- Critical hit odds, configurable as the base critical-hit divisor
+- Critical damage 1.5x
 - Random IV range, configurable from 0-31
 - Wild nature filter with 25 selectable nature toggles
 - Experimental framerate unlock, configurable as battle-only or global
@@ -23,6 +25,8 @@ Notes:
 - The IV range patch rerolls each generated IV until it lands between the selected minimum and maximum, inclusive. The default range is `15-31`.
 - The movement patch now edits player movement constants instead of global movement action function tables. If it sees the older global movement edits made by this patcher, it restores those pointers before applying the safer player-scoped version.
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
+- The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
+- The critical damage patch hooks the two battle damage multiplication sites so normal crits scale to `1.5x` instead of `2x`. Sniper crits scale from `3x` to `2.25x`.
 - The Fairy Patch replaces the existing ??? type slot (`0x09`) with Fairy battle logic, battle UI assets, and Pokedex type icon assets. Its optional Pokemon type update changes only personal-data type bytes for the Kanto-Sinnoh base-form retypes, leaving Altaria unchanged because Platinum has no Mega Evolution form.
 - For quick Fairy battle testing, the browser console can enable `window.PlatinumPatcher.config.debugFairyBattleTest = true` before applying Fairy Patch. This hidden debug mode also applies Pokemon type updates, turns non-Fairy Pokemon into mono Fighting, changes all moves into Fairy type, and changes wild encounter species slots to Jigglypuff.
 - The shiny odds patch edits the ARM9 `Pokemon_IsPersonalityShiny` threshold. The UI maps integer percentages from `0%` to `100%` onto the closest threshold out of `65536`; for example `50%` becomes threshold `32768`, and `100%` becomes threshold `65536`. Thresholds up to `255` use the original one-byte `cmp r0, #imm8` edit; higher thresholds rewrite the small shiny predicate in place so no code cave is needed.
@@ -58,7 +62,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
-These current patches do not modify ARM9: No critical hits, wild nature filter, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
+These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, wild nature filter, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
 
 ## Overlay usage map
 
@@ -75,7 +79,11 @@ Observed overlay bases:
 | Patch | Overlay | Relative range | Loaded RAM range | pkaizo ROM file range | Size | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Wild nature filter | 6 | `0x39A4-0x39FF` | `0x02241AE4-0x02241B3F` | `0x001863A4-0x001863FF` | `0x5C` | Replaces the wild nature generation routine with the allowed-nature table patch. |
+| Critical hit odds table | 16 | `0x33A60-0x33A64` clean, `0x33A7C-0x33A80` pkaizo | `0x0226EBA0-0x0226EBA4` clean, `0x0226EBBC-0x0226EBC0` pkaizo | `0x0021007C-0x00210080` pkaizo | `0x5` | Edits only the base divisor byte; the rest of the stage divisor table remains `08 04 03 02`. |
 | No critical hits | 16 | `0x1FDA4-0x1FDA7` clean, `0x1FDC0-0x1FDC3` pkaizo | `0x0225AEE4-0x0225AEE7` clean, `0x0225AF00-0x0225AF03` pkaizo | `0x001FC3C0-0x001FC3C3` pkaizo | `0x4` | Writes a return stub in the critical-hit multiplier function. Offset follows the crit-rate table fallback shift. |
+| Critical damage 1.5x normal hook | 16 | `0x62B8-0x62C3` | `0x022413F8-0x02241403` | `0x001E28B8-0x001E28C3` | `0xC` | Replaces the normal damage critical multiplier with a branch to the overlay helper. |
+| Critical damage 1.5x Beat Up hook | 16 | `0xAD5A-0xAD65` | `0x02245E9A-0x02245EA5` | `0x001E735A-0x001E7365` | `0xC` | Replaces Beat Up's separate critical multiplier with the same helper. |
+| Critical damage 1.5x helper | 16 | `0x34CA0-0x34CBB` preferred | `0x0226FDE0-0x0226FDFB` preferred | `0x002112A0-0x002112BB` preferred | `0x1C` | Preferred `0xFF` overlay code cave; can fallback to another free `0xFF` fill run. |
 | Force fast text / Experimental text speed | 16 | `0x3CB0-0x3CD7` | `0x0223EDF0-0x0223EE17` | `0x001E02B0-0x001E02D7` | `0x28` | Battle text-speed helper. Experimental text speed also uses the ARM9 hook/helper listed above. |
 | Fairy type table | 16 | `0x33B94-0x33CE2` | `0x0226ECD4-0x0226EE22` | `0x00210194-0x002102E2` | `0x14F` | Compressed type-effectiveness table and Fairy relationships. |
 | Fairy read hook 1 | 16 | `0x1A01A-0x1A025` clean, `0x1A022-0x1A02D` pkaizo | `0x0225515A-0x02255165` clean, `0x02255162-0x0225516D` pkaizo | `0x001F6622-0x001F662D` pkaizo | `0xC` | Redirects type-effectiveness reads to the ARM9 Fairy helper. |

@@ -42,7 +42,7 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v42";
+  const APP_VERSION = "v43";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -250,13 +250,12 @@
     itemRenewal: {
       title: "Item Renewal",
       summary:
-        "Stops battle held-item changes from being written back for the player's side. Consumed berries, Focus Sash, Trick, Switcheroo, Thief, and similar effects still work, but player-side held-item changes are not saved.",
+        "Restores the player's held items after battle cleanup if the Pokemon ends battle with no item. Consumed berries and Focus Sash stay consumed during the fight, so switching out and back in does not bring the item back early.",
       regions: [
-        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
-        "BtlIOCmd_UpdatePartyMon held-item writeback hook: overlay 16 pkaizo +0x213C0 / clean +0x213A4, RAM 0x0225C500 / 0x0225C4E4.",
-        "The helper marks the existing knocked-off-item mask for player-side battlers before the normal held-item writeback check runs. Enemy-side battlers keep the original behavior.",
-        "Because this hooks the shared party update path, a consumed player-side item can reappear if that Pokemon leaves and re-enters during the same battle.",
-        "Older Item Renewal snapshot/restore hooks from this patcher are detected and removed when possible.",
+        "Requires the DSPRE ARM9 expansion. Helper code and a small item snapshot table are stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
+        "BattleSystem_InitBattleMon snapshot hook: overlay 16 pkaizo +0x16B5C / clean +0x16B54, RAM 0x02251C9C / 0x02251C94.",
+        "BattleControllerPlayer_EndFight restore hook: overlay 16 pkaizo +0x15628 / clean +0x15620, RAM 0x02250768 / 0x02250760.",
+        "The helper skips link, tag, and 2-vs-2 battle types so it does not accidentally restore a partner or remote party.",
       ],
     },
     instantPartyHealing: {
@@ -5445,25 +5444,53 @@
     );
   }
 
-  const ITEM_RENEWAL_MARKER = "item_renewal_v3";
+  const ITEM_RENEWAL_MARKER = "item_renewal_v4";
   const ITEM_RENEWAL_LEGACY_MARKERS = ["item_renewal_v1", "item_renewal_v2"];
   const ITEM_RENEWAL_INIT_PKAIZO_REL = 0x16b5c;
   const ITEM_RENEWAL_END_PKAIZO_REL = 0x15628;
   const ITEM_RENEWAL_INIT_ORIGINAL = bytesFromHex("f8 b5 84 b0");
   const ITEM_RENEWAL_END_ORIGINAL = bytesFromHex("70 b5 06 1c");
-  const ITEM_RENEWAL_LEGACY_OFFSETS = {
-    snapshotHook: 0x00,
-    restoreHook: 0x74,
-  };
-  const ITEM_RENEWAL_WRITEBACK_PKAIZO_REL = 0x213c0;
-  const ITEM_RENEWAL_WRITEBACK_CLEAN_REL = 0x213a4;
-  const ITEM_RENEWAL_WRITEBACK_ORIGINAL = bytesFromHex("70 78 00 07");
-  const ITEM_RENEWAL_WRITEBACK_TEMPLATE = bytesFromHex(`
-    10 b5 03 99 65 20 80 00 09 18 49 78 01 22 11 42
-    07 d1 70 78 00 07 00 0f ff f7 fe ff b1 68 01 43
-    b1 60 70 78 00 07 10 bd
+  const ITEM_RENEWAL_TEMPLATE = bytesFromHex(`
+    1f b5 74 46 c0 46 c0 46 a6 46 1f bc f8 b5 84 b0
+    70 47 f0 b5 04 1c 0d 1c 16 1c 1f 1c 06 2f 23 d2
+    20 1c c0 46 c0 46 1c 21 08 42 1d d1 01 20 30 42
+    1a d1 0e 48 01 68 a9 42 03 d0 05 60 00 21 01 61
+    81 82 10 30 c1 5d 00 29 0e d1 01 21 c1 55 20 1c
+    31 1c 3a 1c c0 46 c0 46 06 21 00 22 c0 46 c0 46
+    03 4b 04 33 7a 00 98 52 f0 bd c0 46 00 00 00 00
+    00 00 00 00 1f b5 74 46 c0 46 c0 46 a6 46 1f bc
+    70 b5 06 1c 70 47 f0 b5 81 b0 04 1c 0d 1c 20 1c
+    c0 46 c0 46 1c 21 08 42 27 d1 15 4e 30 68 a8 42
+    23 d1 00 27 06 2f 1c d2 30 1c 10 30 c0 5d 00 28
+    15 d0 20 1c 00 21 3a 1c c0 46 c0 46 05 1c 06 21
+    00 22 c0 46 c0 46 00 28 09 d1 0a 4b 04 33 7a 00
+    9a 5a 00 92 28 1c 06 21 6a 46 c0 46 c0 46 01 37
+    e0 e7 00 20 30 60 30 61 b0 82 01 b0 f0 bd c0 46
+    00 00 00 00 00 00 00 00
   `);
-  const FLAG_INDEX_RAM = 0x020787cc;
+  const ITEM_RENEWAL_OFFSETS = {
+    snapshotHook: 0x00,
+    snapshotCore: 0x12,
+    snapBlCore: 0x04,
+    snapBlGetType: 0x22,
+    snapBlGetParty: 0x54,
+    snapBlGetValue: 0x5c,
+    snapDataPtr1: 0x6c,
+    snapDataPtr2: 0x70,
+    restoreHook: 0x74,
+    restoreCore: 0x86,
+    restoreBlCore: 0x78,
+    restoreBlGetType: 0x90,
+    restoreBlGetParty: 0xb8,
+    restoreBlGetValue: 0xc2,
+    restoreBlSetValue: 0xda,
+    restoreDataPtr1: 0xf0,
+    restoreDataPtr2: 0xf4,
+  };
+  const BATTLE_SYSTEM_GET_BATTLE_TYPE_RAM = 0x0223df0c;
+  const BATTLE_SYSTEM_GET_PARTY_POKEMON_RAM = 0x0223dfac;
+  const POKEMON_GET_VALUE_RAM = 0x02074470;
+  const POKEMON_SET_VALUE_RAM = 0x02074b30;
 
   function patchArrayBl(out, offset, fromAddress, toAddress) {
     const bytes = thumbBl(fromAddress, toAddress);
@@ -5473,22 +5500,49 @@
     out[offset + 3] = bytes[3];
   }
 
+  function patchArrayU32(out, offset, value) {
+    out[offset] = value & 0xff;
+    out[offset + 1] = (value >>> 8) & 0xff;
+    out[offset + 2] = (value >>> 16) & 0xff;
+    out[offset + 3] = (value >>> 24) & 0xff;
+  }
+
   function buildItemRenewalPayload(payloadRamAddress) {
     const out = Array.from(asciiBytes(ITEM_RENEWAL_MARKER));
-    while (out.length % 2 !== 0) {
+    while (out.length % 4 !== 0) {
+      out.push(0);
+    }
+    const dataOffset = out.length;
+    for (let i = 0; i < 24; i += 1) {
       out.push(0);
     }
     const codeOffset = out.length;
-    out.push(...ITEM_RENEWAL_WRITEBACK_TEMPLATE);
+    out.push(...ITEM_RENEWAL_TEMPLATE);
 
+    const dataRam = payloadRamAddress + dataOffset;
     const codeRam = payloadRamAddress + codeOffset;
-    patchArrayBl(out, codeOffset + 0x18, codeRam + 0x18, FLAG_INDEX_RAM);
+    const o = ITEM_RENEWAL_OFFSETS;
+    patchArrayBl(out, codeOffset + o.snapBlCore, codeRam + o.snapBlCore, codeRam + o.snapshotCore);
+    patchArrayBl(out, codeOffset + o.snapBlGetType, codeRam + o.snapBlGetType, BATTLE_SYSTEM_GET_BATTLE_TYPE_RAM);
+    patchArrayBl(out, codeOffset + o.snapBlGetParty, codeRam + o.snapBlGetParty, BATTLE_SYSTEM_GET_PARTY_POKEMON_RAM);
+    patchArrayBl(out, codeOffset + o.snapBlGetValue, codeRam + o.snapBlGetValue, POKEMON_GET_VALUE_RAM);
+    patchArrayBl(out, codeOffset + o.restoreBlCore, codeRam + o.restoreBlCore, codeRam + o.restoreCore);
+    patchArrayBl(out, codeOffset + o.restoreBlGetType, codeRam + o.restoreBlGetType, BATTLE_SYSTEM_GET_BATTLE_TYPE_RAM);
+    patchArrayBl(out, codeOffset + o.restoreBlGetParty, codeRam + o.restoreBlGetParty, BATTLE_SYSTEM_GET_PARTY_POKEMON_RAM);
+    patchArrayBl(out, codeOffset + o.restoreBlGetValue, codeRam + o.restoreBlGetValue, POKEMON_GET_VALUE_RAM);
+    patchArrayBl(out, codeOffset + o.restoreBlSetValue, codeRam + o.restoreBlSetValue, POKEMON_SET_VALUE_RAM);
+    for (const offset of [o.snapDataPtr1, o.snapDataPtr2, o.restoreDataPtr1, o.restoreDataPtr2]) {
+      patchArrayU32(out, codeOffset + offset, dataRam);
+    }
 
     return {
       bytes: new Uint8Array(out),
+      dataOffset,
       codeOffset,
-      helperRam: codeRam,
-      codeSize: ITEM_RENEWAL_WRITEBACK_TEMPLATE.length,
+      dataRam,
+      snapshotHookRam: codeRam + o.snapshotHook,
+      restoreHookRam: codeRam + o.restoreHook,
+      codeSize: ITEM_RENEWAL_TEMPLATE.length,
     };
   }
 
@@ -5503,8 +5557,8 @@
     const out = [];
     const targetOffset =
       label === "Item Renewal snapshot"
-        ? ITEM_RENEWAL_LEGACY_OFFSETS.snapshotHook
-        : ITEM_RENEWAL_LEGACY_OFFSETS.restoreHook;
+        ? ITEM_RENEWAL_OFFSETS.snapshotHook
+        : ITEM_RENEWAL_OFFSETS.restoreHook;
     for (const marker of ITEM_RENEWAL_LEGACY_MARKERS) {
       for (const markerOffset of findNeedle(member, asciiBytes(marker), 0, member.length)) {
         const legacyCodeOffset = align(marker.length, 4) + 24;
@@ -5515,90 +5569,46 @@
     return out;
   }
 
-  function itemRenewalWritebackSignatureMatches(rom, offset) {
-    if (!bytesEqual(rom, offset, bytesFromHex("70 78 00 07 00 0f"))) {
-      return false;
+  function hookBytesForItemRenewal(label, hookRam, built = null) {
+    if (!built) {
+      return new Uint8Array(4);
     }
-    return bytesEqual(
-      rom,
-      offset + 10,
-      bytesFromHex("b1 68 08 42 05 d1 32 1c 38 1c 06 21 0c 32")
-    );
+    const target = label === "Item Renewal snapshot" ? built.snapshotHookRam : built.restoreHookRam;
+    return new Uint8Array(thumbBl(hookRam, target));
   }
 
-  function hookBytesForItemRenewalWriteback(hookRam, built) {
-    return new Uint8Array(thumbBl(hookRam, built.helperRam));
-  }
-
-  function locateItemRenewalWritebackHook(rom, built) {
+  function locateItemRenewalHookWithTarget(rom, rel, originalBytes, built, label) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
-    const preferred = overlay.start + ITEM_RENEWAL_WRITEBACK_PKAIZO_REL;
-    const preferredRam = overlay.loadAddress + ITEM_RENEWAL_WRITEBACK_PKAIZO_REL;
-    const preferredHook = hookBytesForItemRenewalWriteback(preferredRam, built);
-    if (
-      itemRenewalWritebackSignatureMatches(rom, preferred) ||
-      bytesEqual(rom, preferred, preferredHook)
-    ) {
-      return { offset: preferred, overlay, hookBytes: preferredHook, usedFallback: false };
+    const preferred = overlay.start + rel;
+    const preferredRam = overlay.loadAddress + rel;
+    const preferredHook = hookBytesForItemRenewal(label, preferredRam, built);
+    const preferredLegacyHooks = itemRenewalLegacyHookBytes(rom, label, preferredRam);
+    const preferredLegacyHook = preferredLegacyHooks.some((bytes) => bytesEqual(rom, preferred, bytes));
+    if (bytesEqual(rom, preferred, originalBytes) || bytesEqual(rom, preferred, preferredHook) || preferredLegacyHook) {
+      return { offset: preferred, overlay, hookBytes: preferredHook, legacyHook: preferredLegacyHook, usedFallback: false };
     }
 
     const searchStart = Math.max(overlay.start, preferred - 0x60);
     const searchEnd = Math.min(overlay.end, preferred + 0x60);
     const hits = [];
-    for (let offset = searchStart; offset <= searchEnd - ITEM_RENEWAL_WRITEBACK_ORIGINAL.length; offset += 2) {
+    for (let offset = searchStart; offset <= searchEnd - originalBytes.length; offset += 2) {
       const ram = overlay.loadAddress + (offset - overlay.start);
-      const hookBytes = hookBytesForItemRenewalWriteback(ram, built);
-      if (itemRenewalWritebackSignatureMatches(rom, offset) || bytesEqual(rom, offset, hookBytes)) {
-        hits.push({ offset, overlay, hookBytes, usedFallback: true });
+      const hookBytes = hookBytesForItemRenewal(label, ram, built);
+      const legacyHooks = itemRenewalLegacyHookBytes(rom, label, ram);
+      const legacyHook = legacyHooks.some((bytes) => bytesEqual(rom, offset, bytes));
+      if (
+        bytesEqual(rom, offset, originalBytes) ||
+        bytesEqual(rom, offset, hookBytes) ||
+        legacyHook
+      ) {
+        hits.push({ offset, overlay, hookBytes, legacyHook, usedFallback: true });
       }
     }
     if (hits.length === 1) {
       return hits[0];
     }
 
-    throw new PatchError(
-      `Item Renewal held-item writeback hook was not found near overlay 16+${hex(
-        ITEM_RENEWAL_WRITEBACK_PKAIZO_REL
-      )}.`
-    );
-  }
-
-  function migrateLegacyItemRenewalHooks(rom, log) {
-    const overlay = getOverlayRange(rom, OVERLAY_16);
-    const sites = [
-      {
-        label: "Item Renewal snapshot",
-        rel: ITEM_RENEWAL_INIT_PKAIZO_REL,
-        original: ITEM_RENEWAL_INIT_ORIGINAL,
-      },
-      {
-        label: "Item Renewal restore",
-        rel: ITEM_RENEWAL_END_PKAIZO_REL,
-        original: ITEM_RENEWAL_END_ORIGINAL,
-      },
-    ];
-    const migrated = [];
-
-    for (const site of sites) {
-      const preferred = overlay.start + site.rel;
-      const searchStart = Math.max(overlay.start, preferred - 0x60);
-      const searchEnd = Math.min(overlay.end, preferred + 0x60);
-
-      for (let offset = searchStart; offset <= searchEnd - site.original.length; offset += 2) {
-        const ram = overlay.loadAddress + (offset - overlay.start);
-        const legacyHooks = itemRenewalLegacyHookBytes(rom, site.label, ram);
-        if (legacyHooks.some((bytes) => bytesEqual(rom, offset, bytes))) {
-          writeBytes(rom, offset, site.original);
-          migrated.push(`${site.label} overlay 16+${hex(offset - overlay.start)}`);
-          break;
-        }
-      }
-    }
-
-    if (migrated.length) {
-      log.push(`Item Renewal: removed legacy snapshot/restore hook(s): ${migrated.join(", ")}.`);
-    }
-    return migrated.length;
+    throw new PatchError(`${label} hook was not found near overlay 16+${hex(rel)}.`);
   }
 
   function patchItemRenewal(rom, force, log) {
@@ -5610,38 +5620,69 @@
       "Item Renewal helper"
     );
     const built = allocation.built;
-    const located = locateItemRenewalWritebackHook(rom, built);
-    const hookState = requireBytes(
+    const snapshotLocated = locateItemRenewalHookWithTarget(
       rom,
-      located.offset,
-      ITEM_RENEWAL_WRITEBACK_ORIGINAL,
-      located.hookBytes,
-      force,
-      "Item Renewal held-item writeback hook"
+      ITEM_RENEWAL_INIT_PKAIZO_REL,
+      ITEM_RENEWAL_INIT_ORIGINAL,
+      built,
+      "Item Renewal snapshot"
     );
+    const restoreLocated = locateItemRenewalHookWithTarget(
+      rom,
+      ITEM_RENEWAL_END_PKAIZO_REL,
+      ITEM_RENEWAL_END_ORIGINAL,
+      built,
+      "Item Renewal restore"
+    );
+    const snapshotState = snapshotLocated.legacyHook
+      ? "patch"
+      : requireBytes(
+          rom,
+          snapshotLocated.offset,
+          ITEM_RENEWAL_INIT_ORIGINAL,
+          snapshotLocated.hookBytes,
+          force,
+          "Item Renewal snapshot hook"
+        );
+    const restoreState = restoreLocated.legacyHook
+      ? "patch"
+      : requireBytes(
+          rom,
+          restoreLocated.offset,
+          ITEM_RENEWAL_END_ORIGINAL,
+          restoreLocated.hookBytes,
+          force,
+          "Item Renewal restore hook"
+        );
 
-    if (hookState !== "already") {
-      writeBytes(rom, located.offset, located.hookBytes);
+    if (snapshotState !== "already") {
+      writeBytes(rom, snapshotLocated.offset, snapshotLocated.hookBytes);
+    }
+    if (restoreState !== "already") {
+      writeBytes(rom, restoreLocated.offset, restoreLocated.hookBytes);
     }
 
-    const migratedLegacyHooks = migrateLegacyItemRenewalHooks(rom, log);
-
-    if (hookState === "already" && allocation.reused && !migratedLegacyHooks) {
+    if (snapshotState === "already" && restoreState === "already" && allocation.reused) {
       log.push("Item Renewal: already patched.");
       return;
     }
 
     const notes = [];
-    if (located.usedFallback) {
-      notes.push("fallback scan");
+    if (snapshotLocated.usedFallback) {
+      notes.push("snapshot fallback scan");
     }
-    if (migratedLegacyHooks) {
-      notes.push("legacy hooks removed");
+    if (restoreLocated.usedFallback) {
+      notes.push("restore fallback scan");
+    }
+    if (snapshotLocated.legacyHook || restoreLocated.legacyHook) {
+      notes.push("legacy hooks migrated");
     }
     log.push(
-      `Item Renewal: skips player-side held-item writeback at overlay 16+${hex(
-        located.offset - located.overlay.start
-      )}; helper RAM ${hex(built.helperRam)}${
+      `Item Renewal: snapshots player held items at overlay 16+${hex(
+        snapshotLocated.offset - snapshotLocated.overlay.start
+      )}, restores them after battle at overlay 16+${hex(
+        restoreLocated.offset - restoreLocated.overlay.start
+      )}; helper RAM ${hex(allocation.payloadRamAddress)} data ${hex(built.dataRam)}${
         notes.length ? ` (${notes.join(", ")})` : ""
       }.`
     );

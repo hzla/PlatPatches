@@ -92,6 +92,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Infinite Candy chain hook | `0x02085EC6-0x02085EC9` | `0x00089EC6-0x00089EC9` | `0x4` | Branches to the continuous-use helper. Existing Kalaay/Yako/Mixone Rare Candy chain hooks in the synthetic overlay are detected and migrated to the Red Chain item ID. |
 | Infinite Candy Bag_TryRemoveItem hook | `0x0207D60C-0x0207D613` | `0x0008160C-0x00081613` | `0x8` | Literal jump to the synthetic-overlay helper. Red Chain / Infinite Candy returns TRUE without reducing quantity; other items replay the overwritten prologue and return to the original function. |
 | Infinite Candy Pocket_TryRemoveItem hook | `0x0207D658-0x0207D65F` | `0x00081658-0x0008165F` | `0x8` | Same infinite-removal guard for bag-pocket removal paths. |
+| Infinite Candy item-table graphics | `0x020F1A8E-0x020F1A91` | `0x000F5A8E-0x000F5A91` | `0x4` | Red Chain item-table icon and palette pointers are changed to Rare Candy's icon and palette. |
 | Force fast text | `0x02027AC0-0x02027AD9` | `0x0002BAC0-0x0002BAD9` | `0x1A` | Field text-speed helper. |
 | Experimental text speed hook | `0x0201D97C-0x0201D983` | `0x0002197C-0x00021983` | `0x8` | Hooks the async text-printer task runner. |
 | Experimental text speed helper | `0x020795E0-0x0207969B` | `0x0007D5E0-0x0007D69B` | `0xBC` | Preferred helper cave; can fallback to another free ARM9 fill run. |
@@ -162,7 +163,7 @@ Observed overlay bases:
 
 The Fairy Patch also modifies NARC assets outside overlays: `battle/graphic/pl_batt_obj.narc` members `74` and `236`, and `resource/eng/zukan/zukan.narc` members `88`, `89`, and `90`. Optional Fairy Pokemon type updates modify only bytes `6` and `7` of selected entries in `poketool/personal/pl_personal.narc`.
 
-Infinite Candy also modifies NARC data outside overlays: `itemtool/itemdata/pl_item_data.narc` member `0x1A3`, replacing Red Chain item data with Rare Candy party-use behavior while keeping it in the Key Items pocket. It also renames Red Chain text through `msgdata/pl_msg.narc` members `391`, `392`, `393`, and `394`, entry `441`. Its helper code is stored in `data/weather_sys.narc` member `9`, alongside other DSPRE/G4Patcher-style synthetic-overlay code.
+Infinite Candy also modifies NARC data outside overlays: `itemtool/itemdata/pl_item_data.narc` member `0x1A3`, replacing Red Chain item data with Rare Candy party-use behavior while keeping it in the Key Items pocket. Its ARM9 item-table entry points to Rare Candy's existing icon and palette in `itemtool/itemdata/item_icon.narc`; no icon members are duplicated. It also renames Red Chain text through `msgdata/pl_msg.narc` members `391`, `392`, `393`, and `394`, entry `441`. Its helper code is stored in `data/weather_sys.narc` member `9`, alongside other DSPRE/G4Patcher-style synthetic-overlay code.
 
 The DSPRE ARM9 expansion modifies NARC storage outside overlays: `data/weather_sys.narc` member `9` is expanded to `0x16000` bytes. On ROMs without enough padding after that NARC, the installer grows the ROM, shifts later file data forward, updates affected FAT entries, and updates the NDS size/capacity header fields.
 

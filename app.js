@@ -40,7 +40,7 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v36";
+  const APP_VERSION = "v37";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -230,6 +230,7 @@
         "Chain-use hook: ARM9 RAM 0x02085EC6-0x02085EC9 / ROM 0x00089EC6-0x00089EC9. Existing Kalaay/Yako/Mixone Rare Candy chain hooks are detected and migrated to the Red Chain item ID.",
         "Bag_TryRemoveItem hook: ARM9 RAM 0x0207D60C-0x0207D613 / ROM 0x0008160C-0x00081613.",
         "Pocket_TryRemoveItem hook: ARM9 RAM 0x0207D658-0x0207D65F / ROM 0x00081658-0x0008165F.",
+        "Red Chain item-table graphics: ARM9 RAM 0x020F1A8E-0x020F1A91 / ROM 0x000F5A8E-0x000F5A91. The Red Chain entry points at Rare Candy's icon and palette.",
         "Red Chain item data: itemtool/itemdata/pl_item_data.narc member 0x1A3 is given Rare Candy party-use behavior while staying in the Key Items pocket.",
         "Item text: msgdata/pl_msg.narc members 391-394 replace Red Chain description/name/article/plural strings.",
       ],
@@ -3026,6 +3027,8 @@
 
   const RARE_CANDY_ITEM_ID = 50;
   const RED_CHAIN_ITEM_ID = 441;
+  const ITEM_TABLE_ARM9_OFFSET = 0x0f0cc4;
+  const ITEM_TABLE_ENTRY_SIZE = 8;
   const RARE_CANDY_ITEMDATA_MEMBER = 0x32;
   const RED_CHAIN_ITEMDATA_MEMBER = 0x1a3;
   const LEGACY_CHAIN_CANDY_MARKER = "chain_candy_start";
@@ -3486,6 +3489,52 @@
     );
   }
 
+  function itemTableEntryRomOffset(rom, itemId) {
+    const arm9 = getArm9Info(rom);
+    const offset = ITEM_TABLE_ARM9_OFFSET + itemId * ITEM_TABLE_ENTRY_SIZE;
+    if (offset + ITEM_TABLE_ENTRY_SIZE > arm9.size) {
+      throw new PatchError("Infinite Candy item table entry is outside the ARM9 binary.");
+    }
+    return arm9.fileOffset + offset;
+  }
+
+  function readItemTableEntry(rom, itemId) {
+    const offset = itemTableEntryRomOffset(rom, itemId);
+    return {
+      offset,
+      data: readU16(rom, offset),
+      icon: readU16(rom, offset + 2),
+      palette: readU16(rom, offset + 4),
+      agb: readU16(rom, offset + 6),
+    };
+  }
+
+  function patchRedChainCandyItemGraphics(rom, log) {
+    const rareCandy = readItemTableEntry(rom, RARE_CANDY_ITEM_ID);
+    const redChain = readItemTableEntry(rom, RED_CHAIN_ITEM_ID);
+
+    if (rareCandy.data !== RARE_CANDY_ITEMDATA_MEMBER) {
+      throw new PatchError(
+        `Infinite Candy expected Rare Candy item-table data ${hex(RARE_CANDY_ITEMDATA_MEMBER)}, found ${hex(rareCandy.data)}.`
+      );
+    }
+
+    if (redChain.icon === rareCandy.icon && redChain.palette === rareCandy.palette) {
+      log.push(
+        `Infinite Candy: Red Chain item-table graphics already use Rare Candy icon ${rareCandy.icon} / palette ${rareCandy.palette}.`
+      );
+      return;
+    }
+
+    writeU16(rom, redChain.offset + 2, rareCandy.icon);
+    writeU16(rom, redChain.offset + 4, rareCandy.palette);
+    log.push(
+      `Infinite Candy: Red Chain item-table graphics ${hex(redChain.offset + 2)}-${hex(
+        redChain.offset + 5
+      )} now point to Rare Candy icon ${rareCandy.icon} / palette ${rareCandy.palette} (was icon ${redChain.icon} / palette ${redChain.palette}).`
+    );
+  }
+
   function patchInfiniteContinuousCandy(rom, force, log) {
     let outRom = rom;
     const status = dsPreArm9ExpansionStatus(outRom);
@@ -3495,6 +3544,7 @@
     }
 
     patchRedChainCandyItemData(outRom, log);
+    patchRedChainCandyItemGraphics(outRom, log);
     outRom = patchRedChainItemText(outRom, log);
 
     let chain = findExistingChainCandyFunction(outRom);

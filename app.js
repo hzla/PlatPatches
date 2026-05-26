@@ -9,11 +9,13 @@
   }
 
   const PATCHES = {
+    arm9Expansion: "DSPRE ARM9 expansion",
     frameRate: "Unlock framerate",
     shinyOdds: "Shiny odds",
     critOdds: "Critical hit odds",
     critDamage: "Critical damage 1.5x",
     noCrits: "No critical hits",
+    removeEVs: "Remove EV gain",
     modernParalysis: "Modern paralysis",
     modernBurn: "Modern burn",
     modernSleep: "Modern sleep",
@@ -23,14 +25,34 @@
     wildNatures: "Filter wild natures",
     movementSpeed: "Faster movement",
     noOverworldPoison: "Remove overworld poison",
+    infiniteContinuousCandy: "Infinite Candy",
+    instantPartyHealing: "Instant party healing",
+    timeOfDayEvos: "Remove time evo clock checks",
+    vsSeekerQol: "VS Seeker QoL",
+    removeSurfWaterfallChecks: "Remove Surf/Waterfall checks",
+    drySkinAiFix: "Dry Skin AI fix",
+    forgettableHMs: "Forgettable HMs",
+    instantPokeradar: "Instant Pokeradar recharge",
+    infiniteTMs: "Infinite TMs",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
     instantText: "Force fast text",
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v32";
+  const APP_VERSION = "v36";
   const PATCH_INFO = {
+    arm9Expansion: {
+      title: "DSPRE ARM9 expansion",
+      summary:
+        "Installs the same basic ARM9 expansion setup used by DSPRE and G4Patcher. This gives code-injection patches a large synthetic-overlay area to place helper routines.",
+      regions: [
+        "ARM9 expansion branch: ARM9 RAM 0x02000CB4-0x02000CB7 / ROM 0x00004CB4-0x00004CB7.",
+        "ARM9 synthetic-overlay loader init: ARM9 RAM 0x02101574-0x0210158C / ROM 0x00105574-0x0010558C.",
+        "Synthetic overlay storage: data/weather_sys.narc member 9 expanded to 0x16000 bytes, preserving existing contents if already expanded.",
+        "If data/weather_sys.narc grows, later ROM files are shifted forward and their FAT entries are updated.",
+      ],
+    },
     fairyType: {
       title: "Fairy Patch",
       summary:
@@ -101,6 +123,14 @@
       regions: [
         "Overlay 16 stub: +0x1FDA4-0x1FDA7 clean, +0x1FDC0-0x1FDC3 pkaizo.",
         "Uses the critical-rate table as a nearby locator, so it tolerates the pkaizo +0x1C shift.",
+      ],
+    },
+    removeEVs: {
+      title: "Remove EV gain",
+      summary:
+        "Stops Pokemon from gaining EVs after battle. Existing EVs stay as they are; this only changes the reward step.",
+      regions: [
+        "Overlay 16 EV reward call site: RAM 0x02249B7C / overlay 16 +0xEA3C.",
       ],
     },
     modernParalysis: {
@@ -191,6 +221,85 @@
         "The patch skips the post-step poison damage/check sequence after the normal party scan has run.",
       ],
     },
+    infiniteContinuousCandy: {
+      title: "Infinite Candy",
+      summary:
+        "Turns the Red Chain key item into Infinite Candy. You still need the Red Chain in the bag, but using it levels Pokemon like a Rare Candy, does not spend it, and returns to the party selection prompt after a normal level-up.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
+        "Chain-use hook: ARM9 RAM 0x02085EC6-0x02085EC9 / ROM 0x00089EC6-0x00089EC9. Existing Kalaay/Yako/Mixone Rare Candy chain hooks are detected and migrated to the Red Chain item ID.",
+        "Bag_TryRemoveItem hook: ARM9 RAM 0x0207D60C-0x0207D613 / ROM 0x0008160C-0x00081613.",
+        "Pocket_TryRemoveItem hook: ARM9 RAM 0x0207D658-0x0207D65F / ROM 0x00081658-0x0008165F.",
+        "Red Chain item data: itemtool/itemdata/pl_item_data.narc member 0x1A3 is given Rare Candy party-use behavior while staying in the Key Items pocket.",
+        "Item text: msgdata/pl_msg.narc members 391-394 replace Red Chain description/name/article/plural strings.",
+      ],
+    },
+    instantPartyHealing: {
+      title: "Instant party healing",
+      summary:
+        "Makes party-menu healing items finish their healing animation faster. It does not change the amount healed.",
+      regions: [
+        "ARM9 party item healing call site: RAM 0x02085734-0x02085735 / ROM 0x00089734-0x00089735.",
+      ],
+    },
+    timeOfDayEvos: {
+      title: "Remove time evo clock checks",
+      summary:
+        "Lets held-item time-of-day evolutions ignore the DS clock requirement.",
+      regions: [
+        "ARM9 evolution checks: RAM 0x02076DFA-0x02076DFD and 0x02076DE2-0x02076DE5.",
+      ],
+    },
+    vsSeekerQol: {
+      title: "VS Seeker QoL",
+      summary:
+        "Makes the VS Seeker recharge quickly and improves the trainer-rematch roll.",
+      regions: [
+        "Overlay 5 VS Seeker recharge/rematch checks: RAM 0x021DBBC4-0x021DBBC6 and 0x021DBD28.",
+      ],
+    },
+    removeSurfWaterfallChecks: {
+      title: "Remove Surf/Waterfall checks",
+      summary:
+        "Allows Surf and Waterfall use without requiring a party Pokemon to know the matching HM move.",
+      regions: [
+        "Overlay 5 field-move party check: RAM 0x021D2832-0x021D2835 / overlay 5 +0x1AB2.",
+      ],
+    },
+    drySkinAiFix: {
+      title: "Dry Skin AI fix",
+      summary:
+        "Fixes the trainer AI value used for Dry Skin, so AI scoring no longer treats it like the wrong ability.",
+      regions: [
+        "Overlay 14 trainer AI ability table/check: RAM 0x022249CC / overlay 14 +0x4DAC.",
+      ],
+    },
+    forgettableHMs: {
+      title: "Forgettable HMs",
+      summary:
+        "Allows HMs to be forgotten like ordinary moves. This can make softlocks easier if a hack expects HM restrictions.",
+      regions: [
+        "Overlay 13 move-delete check: RAM 0x0222056E-0x02220573 / overlay 13 +0x94E.",
+        "ARM9 move-delete check: RAM 0x0208CDD2-0x0208CDD7 / ROM 0x00090DD2-0x00090DD7.",
+      ],
+    },
+    instantPokeradar: {
+      title: "Instant Pokeradar recharge",
+      summary:
+        "Lets the Pokeradar recharge immediately instead of requiring the normal step count.",
+      regions: [
+        "ARM9 Pokeradar recharge step count: RAM 0x02069A42 / ROM 0x0006DA42.",
+      ],
+    },
+    infiniteTMs: {
+      title: "Infinite TMs",
+      summary:
+        "Stops TMs from being consumed after use. HMs are already reusable in Platinum.",
+      regions: [
+        "Overlay 84 TM-use consume call: RAM 0x0223F912-0x0223F915 / overlay 84 +0x4372.",
+        "ARM9 item-use branch byte: RAM 0x020865EB / ROM 0x0008A5EB.",
+      ],
+    },
     playerAccuracy: {
       title: "Player accuracy bypass",
       summary:
@@ -207,10 +316,28 @@
 
   const OVERLAY_5 = 5;
   const OVERLAY_6 = 6;
+  const OVERLAY_13 = 13;
+  const OVERLAY_14 = 14;
   const OVERLAY_16 = 16;
   const OVERLAY_21 = 21;
+  const OVERLAY_84 = 84;
   const SPECIES_JIGGLYPUFF = 39;
   const NOP = [0xc0, 0x46];
+  const DSPRE_SYNTH_OVERLAY_PATH = "data/weather_sys.narc";
+  const DSPRE_SYNTH_OVERLAY_MEMBER = 9;
+  const DSPRE_SYNTH_OVERLAY_SIZE = 0x16000;
+  const DSPRE_ARM9_BRANCH_RAM = 0x02000cb4;
+  const DSPRE_ARM9_INIT_RAM = 0x02101574;
+  const DSPRE_ARM9_BRANCH_ORIGINAL = bytesFromHex("00 20 03 21");
+  const DSPRE_ARM9_BRANCH_PATCHED = bytesFromHex("00 f1 5e fc");
+  const DSPRE_ARM9_INIT_ORIGINAL = bytesFromHex(`
+    41 73 73 65 72 74 69 6f 6e 20 28 25 73 29 20
+    66 61 69 6c 65 64 20 69 6e
+  `);
+  const DSPRE_ARM9_INIT_PATCHED = bytesFromHex(`
+    fc b5 04 48 41 21 09 22 05 f7 92 fa 00 20 03 21
+    fc bd 00 00 00 80 3c 02 00
+  `);
 
   const hex = (value) => `0x${value.toString(16).toUpperCase()}`;
 
@@ -261,6 +388,17 @@
     data[offset + 1] = (value >>> 8) & 0xff;
     data[offset + 2] = (value >>> 16) & 0xff;
     data[offset + 3] = (value >>> 24) & 0xff;
+  }
+
+  function updateRomSizeHeader(data) {
+    writeU32(data, 0x80, data.length);
+    let deviceCapacity = 0x20000;
+    let exponent = 0;
+    while (deviceCapacity < data.length && exponent < 0xff) {
+      deviceCapacity *= 2;
+      exponent += 1;
+    }
+    data[0x14] = exponent;
   }
 
   function writeBytes(data, offset, patch) {
@@ -449,6 +587,12 @@
     writeU32(rom, fatEntry.entry + 4, end);
   }
 
+  function writeFatEntryRange(rom, fileId, start, end) {
+    const fatEntry = getFatEntry(rom, fileId);
+    writeU32(rom, fatEntry.entry, start);
+    writeU32(rom, fatEntry.entry + 4, end);
+  }
+
   function findFileByPath(rom, wantedPath) {
     const fntOffset = readU32(rom, 0x40);
     const fntSize = readU32(rom, 0x44);
@@ -634,6 +778,196 @@
     }
     writeFatEntryEnd(rom, file.fileId, file.start + replacement.length);
     return "patch";
+  }
+
+  function replaceRomFileAllowGrowth(rom, file, replacement, label) {
+    const oldSize = file.end - file.start;
+    if (replacement.length <= oldSize) {
+      return { rom, state: replaceRomFile(rom, file, replacement, label), growth: 0 };
+    }
+
+    if (bytesEqual(rom, file.start, replacement) && oldSize === replacement.length) {
+      return { rom, state: "already", growth: 0 };
+    }
+
+    const growth = replacement.length - oldSize;
+    const expanded = new Uint8Array(rom.length + growth);
+    expanded.set(rom.slice(0, file.start), 0);
+    expanded.set(replacement, file.start);
+    expanded.set(rom.slice(file.end), file.start + replacement.length);
+
+    const fat = getFatInfo(expanded);
+    const fatCount = Math.floor(fat.size / 8);
+    for (let fileId = 0; fileId < fatCount; fileId += 1) {
+      const fatEntry = getFatEntry(expanded, fileId);
+      if (fileId === file.fileId) {
+        writeFatEntryRange(expanded, fileId, file.start, file.start + replacement.length);
+      } else if (fatEntry.start >= file.end) {
+        writeFatEntryRange(expanded, fileId, fatEntry.start + growth, fatEntry.end + growth);
+      }
+    }
+
+    updateRomSizeHeader(expanded);
+    return { rom: expanded, state: "patch", growth };
+  }
+
+  function narcMemberLength(narc, memberId) {
+    const parsed = parseNarc(narc);
+    const entry = parsed.entries[memberId];
+    if (!entry) {
+      throw new PatchError(`NARC member ${memberId} does not exist.`);
+    }
+    return entry.end - entry.start;
+  }
+
+  function narcMemberBytes(narc, memberId) {
+    const parsed = parseNarc(narc);
+    const entry = parsed.entries[memberId];
+    if (!entry) {
+      throw new PatchError(`NARC member ${memberId} does not exist.`);
+    }
+    return narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end);
+  }
+
+  function asciiBytes(text) {
+    const out = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i += 1) {
+      out[i] = text.charCodeAt(i) & 0xff;
+    }
+    return out;
+  }
+
+  function align(value, boundary) {
+    return (value + boundary - 1) & ~(boundary - 1);
+  }
+
+  function findAlignedZeroRun(data, size, alignment = 0x10) {
+    for (let offset = 0; offset <= data.length - size; offset = align(offset + 1, alignment)) {
+      let ok = true;
+      for (let i = 0; i < size; i += 1) {
+        if (data[offset + i] !== 0x00) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        return offset;
+      }
+    }
+    return -1;
+  }
+
+  function readSyntheticOverlayMember(rom) {
+    const file = findFileByPath(rom, DSPRE_SYNTH_OVERLAY_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const member = narcMemberBytes(narc, DSPRE_SYNTH_OVERLAY_MEMBER);
+    return { file, narc, member };
+  }
+
+  function replaceSyntheticOverlayMember(rom, member) {
+    const file = findFileByPath(rom, DSPRE_SYNTH_OVERLAY_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const patchedNarc = replaceNarcMembers(narc, [[DSPRE_SYNTH_OVERLAY_MEMBER, member]]);
+    replaceRomFile(rom, file, patchedNarc, "DSPRE synthetic overlay member");
+  }
+
+  function dsPreArm9ExpansionStatus(rom) {
+    const branchAt = arm9Offset(rom, DSPRE_ARM9_BRANCH_RAM, DSPRE_ARM9_BRANCH_PATCHED.length);
+    const initAt = arm9Offset(rom, DSPRE_ARM9_INIT_RAM, DSPRE_ARM9_INIT_PATCHED.length);
+    let synthMemberLength = 0;
+    let synthAvailable = false;
+
+    try {
+      const synthFile = findFileByPath(rom, DSPRE_SYNTH_OVERLAY_PATH);
+      const synthNarc = rom.slice(synthFile.start, synthFile.end);
+      synthMemberLength = narcMemberLength(synthNarc, DSPRE_SYNTH_OVERLAY_MEMBER);
+      synthAvailable = synthMemberLength >= DSPRE_SYNTH_OVERLAY_SIZE;
+    } catch (error) {
+      if (error instanceof PatchError) {
+        synthMemberLength = 0;
+      } else {
+        throw error;
+      }
+    }
+
+    return {
+      branchAt,
+      initAt,
+      branchInstalled: bytesEqual(rom, branchAt, DSPRE_ARM9_BRANCH_PATCHED),
+      initInstalled: bytesEqual(rom, initAt, DSPRE_ARM9_INIT_PATCHED),
+      branchOriginal: bytesEqual(rom, branchAt, DSPRE_ARM9_BRANCH_ORIGINAL),
+      initOriginal: bytesEqual(rom, initAt, DSPRE_ARM9_INIT_ORIGINAL),
+      synthMemberLength,
+      synthAvailable,
+    };
+  }
+
+  function patchArm9Expansion(rom, force, log) {
+    const status = dsPreArm9ExpansionStatus(rom);
+    const branchState = requireBytes(
+      rom,
+      status.branchAt,
+      DSPRE_ARM9_BRANCH_ORIGINAL,
+      DSPRE_ARM9_BRANCH_PATCHED,
+      force,
+      "DSPRE ARM9 expansion branch"
+    );
+    const initState = requireBytes(
+      rom,
+      status.initAt,
+      DSPRE_ARM9_INIT_ORIGINAL,
+      DSPRE_ARM9_INIT_PATCHED,
+      force,
+      "DSPRE ARM9 synthetic-overlay loader"
+    );
+
+    if (branchState !== "already") {
+      writeBytes(rom, status.branchAt, DSPRE_ARM9_BRANCH_PATCHED);
+    }
+    if (initState !== "already") {
+      writeBytes(rom, status.initAt, DSPRE_ARM9_INIT_PATCHED);
+    }
+
+    let outRom = rom;
+    let synthState = "already";
+    let growth = 0;
+    const synthFile = findFileByPath(outRom, DSPRE_SYNTH_OVERLAY_PATH);
+    const synthNarc = outRom.slice(synthFile.start, synthFile.end);
+    const memberLength = narcMemberLength(synthNarc, DSPRE_SYNTH_OVERLAY_MEMBER);
+    if (memberLength < DSPRE_SYNTH_OVERLAY_SIZE) {
+      const expandedMember = new Uint8Array(DSPRE_SYNTH_OVERLAY_SIZE);
+      const patchedNarc = replaceNarcMembers(synthNarc, [[DSPRE_SYNTH_OVERLAY_MEMBER, expandedMember]]);
+      const replacement = replaceRomFileAllowGrowth(
+        outRom,
+        synthFile,
+        patchedNarc,
+        "DSPRE synthetic overlay NARC"
+      );
+      outRom = replacement.rom;
+      synthState = replacement.state;
+      growth = replacement.growth;
+    }
+
+    const finalSynthFile = findFileByPath(outRom, DSPRE_SYNTH_OVERLAY_PATH);
+    const finalSynthLength = narcMemberLength(
+      outRom.slice(finalSynthFile.start, finalSynthFile.end),
+      DSPRE_SYNTH_OVERLAY_MEMBER
+    );
+    log.push(
+      `DSPRE ARM9 expansion: ${
+        branchState === "already" && initState === "already" ? "already installed" : "installed"
+      } ARM9 branch at RAM ${hex(DSPRE_ARM9_BRANCH_RAM)} / ROM ${hex(status.branchAt)} and loader at RAM ${hex(
+        DSPRE_ARM9_INIT_RAM
+      )} / ROM ${hex(status.initAt)}.`
+    );
+    log.push(
+      `DSPRE synthetic overlay: ${
+        synthState === "already" ? "already expanded/preserved" : "expanded"
+      } ${DSPRE_SYNTH_OVERLAY_PATH} member ${DSPRE_SYNTH_OVERLAY_MEMBER} to ${hex(finalSynthLength)} byte(s)${
+        growth ? `; ROM grew by ${growth} byte(s) and later FAT entries were shifted` : ""
+      }.`
+    );
+    return outRom;
   }
 
   const IV_ORIGINAL = bytesFromHex(`
@@ -2439,6 +2773,841 @@
     );
   }
 
+  function simpleSiteOffset(rom, site) {
+    if (site.kind === "arm9") {
+      return {
+        offset: arm9Offset(rom, site.ramAddress, site.expected.length),
+        addressLabel: `ARM9 RAM ${hex(site.ramAddress)}`,
+      };
+    }
+
+    const overlay = getOverlayRange(rom, site.overlayId);
+    const relativeOffset = site.ramAddress - overlay.loadAddress;
+    if (
+      relativeOffset < 0 ||
+      overlay.start + relativeOffset + site.expected.length > overlay.end
+    ) {
+      throw new PatchError(
+        `${site.label} at ${hex(site.ramAddress)} is outside overlay ${site.overlayId}.`
+      );
+    }
+    return {
+      overlay,
+      offset: overlay.start + relativeOffset,
+      relativeOffset,
+      addressLabel: `overlay ${site.overlayId}+${hex(relativeOffset)}`,
+    };
+  }
+
+  function patchSimpleSites(rom, force, log, label, sites) {
+    let changed = 0;
+    let fallbackCount = 0;
+    const touched = [];
+
+    for (const site of sites) {
+      const locatedSite = simpleSiteOffset(rom, site);
+      let located = { offset: locatedSite.offset, usedFallback: false };
+      if (site.expected.length > 1 && site.fallbackRadius) {
+        located = locateNearby(
+          rom,
+          locatedSite.offset,
+          site.expected,
+          site.patched,
+          site.fallbackRadius,
+          site.label
+        );
+      }
+
+      const state = requireBytes(
+        rom,
+        located.offset,
+        site.expected,
+        site.patched,
+        force,
+        site.label
+      );
+      if (state !== "already") {
+        writeBytes(rom, located.offset, site.patched);
+        changed += 1;
+      }
+      if (located.usedFallback) {
+        fallbackCount += 1;
+      }
+
+      if (site.kind === "overlay") {
+        touched.push(`overlay ${site.overlayId}+${hex(located.offset - locatedSite.overlay.start)}`);
+      } else {
+        touched.push(`ARM9 RAM ${hex(site.ramAddress)}`);
+      }
+    }
+
+    log.push(
+      `${label}: ${changed ? `patched ${changed} site(s)` : "already patched"} at ${touched.join(
+        ", "
+      )}${fallbackCount ? ` (${fallbackCount} fallback scan${fallbackCount === 1 ? "" : "s"})` : ""}.`
+    );
+  }
+
+  const REMOVE_EVS_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_16,
+      ramAddress: 0x02249b7c,
+      expected: bytesFromHex("fe 01 00 00"),
+      patched: bytesFromHex("00 00 00 00"),
+      fallbackRadius: 0x100,
+      label: "Remove EV gain",
+    },
+  ];
+
+  const INSTANT_PARTY_HEALING_SITES = [
+    {
+      kind: "arm9",
+      ramAddress: 0x02085734,
+      expected: bytesFromHex("49 1c"),
+      patched: bytesFromHex("21 46"),
+      fallbackRadius: 0x80,
+      label: "Instant party healing",
+    },
+  ];
+
+  const TIME_OF_DAY_EVOS_SITES = [
+    {
+      kind: "arm9",
+      ramAddress: 0x02076dfa,
+      expected: bytesFromHex("01 28 4f d1"),
+      patched: bytesFromHex("00 00 00 00"),
+      fallbackRadius: 0x80,
+      label: "Time-of-day evolution check 1",
+    },
+    {
+      kind: "arm9",
+      ramAddress: 0x02076de2,
+      expected: bytesFromHex("00 28 5b d1"),
+      patched: bytesFromHex("00 00 00 00"),
+      fallbackRadius: 0x80,
+      label: "Time-of-day evolution check 2",
+    },
+  ];
+
+  const VS_SEEKER_QOL_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_5,
+      ramAddress: 0x021dbbc4,
+      expected: bytesFromHex("05 d2 71"),
+      patched: bytesFromHex("64 26 31"),
+      fallbackRadius: 0x100,
+      label: "VS Seeker recharge/rematch check",
+    },
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_5,
+      ramAddress: 0x021dbd28,
+      expected: bytesFromHex("32"),
+      patched: bytesFromHex("64"),
+      label: "VS Seeker rematch chance",
+    },
+  ];
+
+  const SURF_WATERFALL_CHECK_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_5,
+      ramAddress: 0x021d2832,
+      expected: bytesFromHex("82 f6 b5 f8"),
+      patched: bytesFromHex("00 20 00 00"),
+      fallbackRadius: 0x100,
+      label: "Surf/Waterfall HM party check",
+    },
+  ];
+
+  const DRY_SKIN_AI_FIX_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_14,
+      ramAddress: 0x022249cc,
+      expected: bytesFromHex("1a"),
+      patched: bytesFromHex("57"),
+      label: "Dry Skin AI fix",
+    },
+  ];
+
+  const FORGETTABLE_HMS_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_13,
+      ramAddress: 0x0222056e,
+      expected: bytesFromHex("01 f0 35 fa 01 28"),
+      patched: bytesFromHex("c0 46 00 20 01 28"),
+      fallbackRadius: 0x100,
+      label: "Forgettable HMs overlay check",
+    },
+    {
+      kind: "arm9",
+      ramAddress: 0x0208cdd2,
+      expected: bytesFromHex("f0 f7 5b fa 01 28"),
+      patched: bytesFromHex("c0 46 00 20 01 28"),
+      fallbackRadius: 0x100,
+      label: "Forgettable HMs ARM9 check",
+    },
+  ];
+
+  const INSTANT_POKERADAR_SITES = [
+    {
+      kind: "arm9",
+      ramAddress: 0x02069a42,
+      expected: bytesFromHex("32"),
+      patched: bytesFromHex("00"),
+      label: "Instant Pokeradar recharge",
+    },
+  ];
+
+  const INFINITE_TMS_SITES = [
+    {
+      kind: "overlay",
+      overlayId: OVERLAY_84,
+      ramAddress: 0x0223f912,
+      expected: bytesFromHex("ff f7 83 ff"),
+      patched: bytesFromHex("00 00 00 00"),
+      fallbackRadius: 0x100,
+      label: "Infinite TMs overlay consume call",
+    },
+    {
+      kind: "arm9",
+      ramAddress: 0x020865eb,
+      expected: bytesFromHex("d1"),
+      patched: bytesFromHex("e0"),
+      label: "Infinite TMs ARM9 branch",
+    },
+  ];
+
+  function patchRemoveEVs(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Remove EV gain", REMOVE_EVS_SITES);
+  }
+
+  function patchInstantPartyHealing(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Instant party healing", INSTANT_PARTY_HEALING_SITES);
+  }
+
+  function patchTimeOfDayEvos(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Remove time evo clock checks", TIME_OF_DAY_EVOS_SITES);
+  }
+
+  function patchVsSeekerQol(rom, force, log) {
+    patchSimpleSites(rom, force, log, "VS Seeker QoL", VS_SEEKER_QOL_SITES);
+  }
+
+  function patchRemoveSurfWaterfallChecks(rom, force, log) {
+    patchSimpleSites(
+      rom,
+      force,
+      log,
+      "Remove Surf/Waterfall checks",
+      SURF_WATERFALL_CHECK_SITES
+    );
+  }
+
+  function patchDrySkinAiFix(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Dry Skin AI fix", DRY_SKIN_AI_FIX_SITES);
+  }
+
+  function patchForgettableHMs(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Forgettable HMs", FORGETTABLE_HMS_SITES);
+  }
+
+  function patchInstantPokeradar(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Instant Pokeradar recharge", INSTANT_POKERADAR_SITES);
+  }
+
+  function patchInfiniteTMs(rom, force, log) {
+    patchSimpleSites(rom, force, log, "Infinite TMs", INFINITE_TMS_SITES);
+  }
+
+  const RARE_CANDY_ITEM_ID = 50;
+  const RED_CHAIN_ITEM_ID = 441;
+  const RARE_CANDY_ITEMDATA_MEMBER = 0x32;
+  const RED_CHAIN_ITEMDATA_MEMBER = 0x1a3;
+  const LEGACY_CHAIN_CANDY_MARKER = "chain_candy_start";
+  const CHAIN_CANDY_MARKER = "chain_candy_red_v1";
+  const LEGACY_INFINITE_CANDY_MARKER = "inf_candy_remove_v1";
+  const INFINITE_CANDY_MARKER = "inf_redchain_remove_v1";
+  const SYNTH_OVERLAY_RAM_BASE = 0x023c8000;
+  const CHAIN_CANDY_HOOK_RAM = 0x02085ec6;
+  const BAG_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d60c;
+  const POCKET_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d658;
+  const BAG_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d614;
+  const POCKET_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d660;
+  const BAG_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("f0 b5 83 b0 06 1c 0f 1c");
+  const POCKET_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("70 b5 05 1c 0e 1c 1c 1c");
+
+  function emitU32(out, value) {
+    out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+  }
+
+  function literalJump(targetAddress) {
+    const out = [0x00, 0x4b, 0x18, 0x47];
+    emitU32(out, targetAddress | 1);
+    return new Uint8Array(out);
+  }
+
+  function decodeLiteralJump(data, offset) {
+    if (
+      offset < 0 ||
+      offset + 8 > data.length ||
+      data[offset] !== 0x00 ||
+      data[offset + 1] !== 0x4b ||
+      data[offset + 2] !== 0x18 ||
+      data[offset + 3] !== 0x47
+    ) {
+      return null;
+    }
+    return readU32(data, offset + 4) & ~1;
+  }
+
+  function emitRedChainItemIdR1(emit16) {
+    emit16(0x21dd); // mov r1, #0xdd
+    emit16(0x0049); // lsl r1, r1, #1
+    emit16(0x3901); // sub r1, #1, yielding item ID 441
+  }
+
+  function buildChainCandyPayload(payloadRamAddress) {
+    const out = Array.from(asciiBytes(CHAIN_CANDY_MARKER));
+    while (out.length % 2 !== 0) {
+      out.push(0);
+    }
+    const fixups = [];
+
+    function here() {
+      return payloadRamAddress + out.length;
+    }
+    function emit(bytes) {
+      out.push(...bytes);
+    }
+    function emit16(value) {
+      emit(thumbInst16(value));
+    }
+    function branch(name) {
+      fixups.push({ offset: out.length, at: here(), name, type: "branch" });
+      emit16(0xe000);
+    }
+    function cond(name, condition) {
+      fixups.push({ offset: out.length, at: here(), name, type: "cond", condition });
+      emit16(0xd000 | (condition << 8));
+    }
+    const labels = new Map();
+    function label(name) {
+      labels.set(name, here());
+    }
+
+    label("hook");
+    emit16(0xb520); // push {r5, lr}
+    emit16(0x7008); // strb r0, [r1]
+    emit16(0x2800); // cmp r0, #0
+    cond("exit", 0x1); // bne
+    emit16(0x20b4); // mov r0, #0xb4
+    emit16(0x00c0); // lsl r0, r0, #3
+    emit16(0x3004); // add r0, #4
+    emit16(0x1821); // add r1, r4, r0
+    emit16(0x680d); // ldr r5, [r1]
+    emit16(0x6868); // ldr r0, [r5, #4]
+    emitRedChainItemIdR1(emit16);
+    emit16(0x2201); // mov r2, #1
+    emit16(0x230c); // mov r3, #12
+    emit(thumbBl(here(), 0x0207d688)); // Bag_CanRemoveItem
+    emit16(0x2800); // cmp r0, #0
+    cond("exit", 0x0); // beq
+    emitRedChainItemIdR1(emit16);
+    emit16(0x2024); // mov r0, #36
+    emit16(0x1828); // add r0, r5, r0
+    emit16(0x8001); // strh r1, [r0]
+    emit16(0x1c20); // mov r0, r4
+    emit16(0x2189); // mov r1, #0x89
+    emit16(0x0089); // lsl r1, r1, #2
+    emit16(0x1840); // add r0, r0, r1
+    emit16(0x2100); // mov r1, #0
+    emit(thumbBl(here(), 0x0200e084)); // Window_EraseMessageBox
+    emit16(0x1c20); // mov r0, r4
+    emit16(0x2120); // mov r1, #32
+    emit16(0x2201); // mov r2, #1
+    emit(thumbBl(here(), 0x020826e0)); // PartyMenu_PrintToWindow32
+    emit16(0x2004); // mov r0, #4
+    emit16(0xbd20); // pop {r5, pc}
+    label("exit");
+    emit16(0x2020); // mov r0, #0x20
+    emit16(0xbd20); // pop {r5, pc}
+    branch("end");
+    while (out.length % 4 !== 0) {
+      out.push(0);
+    }
+    label("end");
+
+    for (const fixup of fixups) {
+      const target = labels.get(fixup.name);
+      if (target == null) {
+        throw new Error(`internal chain candy label not found: ${fixup.name}`);
+      }
+      const bytes =
+        fixup.type === "cond"
+          ? thumbCondBranch(fixup.at, target, fixup.condition)
+          : thumbB(fixup.at, target);
+      out[fixup.offset] = bytes[0];
+      out[fixup.offset + 1] = bytes[1];
+    }
+
+    return new Uint8Array(out);
+  }
+
+  function buildInfiniteCandyPayload(payloadRamAddress) {
+    const out = Array.from(asciiBytes(INFINITE_CANDY_MARKER));
+    while (out.length % 4 !== 0) {
+      out.push(0);
+    }
+    const bagHelperOffset = out.length;
+    out.push(
+      0x01, 0xb4, // push {r0}
+      0xdd, 0x20, // mov r0, #0xdd
+      0x40, 0x00, // lsl r0, r0, #1
+      0x01, 0x38, // sub r0, #1, yielding item ID 441
+      0x81, 0x42, // cmp r1, r0
+      0x01, 0xbc, // pop {r0}
+      0x01, 0xd1, // bne normal
+      0x01, 0x20, // mov r0, #1
+      0x70, 0x47 // bx lr
+    );
+    out.push(...BAG_TRY_REMOVE_ITEM_EXPECTED);
+    out.push(...literalJump(BAG_TRY_REMOVE_ITEM_RESUME_RAM));
+
+    while (out.length % 4 !== 0) {
+      out.push(0);
+    }
+    const pocketHelperOffset = out.length;
+    out.push(
+      0x01, 0xb4, // push {r0}
+      0xdd, 0x20, // mov r0, #0xdd
+      0x40, 0x00, // lsl r0, r0, #1
+      0x01, 0x38, // sub r0, #1, yielding item ID 441
+      0x82, 0x42, // cmp r2, r0
+      0x01, 0xbc, // pop {r0}
+      0x01, 0xd1, // bne normal
+      0x01, 0x20, // mov r0, #1
+      0x70, 0x47 // bx lr
+    );
+    out.push(...POCKET_TRY_REMOVE_ITEM_EXPECTED);
+    out.push(...literalJump(POCKET_TRY_REMOVE_ITEM_RESUME_RAM));
+
+    return {
+      bytes: new Uint8Array(out),
+      bagHelperOffset,
+      pocketHelperOffset,
+      bagHelperRam: payloadRamAddress + bagHelperOffset,
+      pocketHelperRam: payloadRamAddress + pocketHelperOffset,
+    };
+  }
+
+  function synthMarkerOffsets(member, marker) {
+    return findNeedle(member, asciiBytes(marker), 0, member.length);
+  }
+
+  function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
+    const { member } = readSyntheticOverlayMember(rom);
+    const existing = synthMarkerOffsets(member, marker);
+    if (existing.length > 0) {
+      const markerOffset = existing[existing.length - 1];
+      const payloadRamAddress = SYNTH_OVERLAY_RAM_BASE + markerOffset;
+      const built = buildPayload(payloadRamAddress);
+      const payloadBytes = built.bytes || built;
+      if (bytesEqual(member, markerOffset, payloadBytes)) {
+        log.push(
+          `${label}: reused existing synthetic-overlay payload at member ${hex(
+            markerOffset
+          )} / RAM ${hex(payloadRamAddress)}.`
+        );
+      } else if (options.updateExisting) {
+        const patchedMember = new Uint8Array(member);
+        if (markerOffset + payloadBytes.length > patchedMember.length) {
+          throw new PatchError(`${label} existing synthetic-overlay marker is too close to the end of the member.`);
+        }
+        patchedMember.set(payloadBytes, markerOffset);
+        replaceSyntheticOverlayMember(rom, patchedMember);
+        log.push(
+          `${label}: updated existing synthetic-overlay payload at member ${hex(
+            markerOffset
+          )} / RAM ${hex(payloadRamAddress)}.`
+        );
+      } else {
+        log.push(
+          `${label}: found marker at member ${hex(
+            markerOffset
+          )} / RAM ${hex(payloadRamAddress)} and reused its addresses.`
+        );
+      }
+      return { markerOffset, payloadRamAddress, built, reused: true };
+    }
+
+    const provisional = buildPayload(SYNTH_OVERLAY_RAM_BASE);
+    const provisionalBytes = provisional.bytes || provisional;
+    const markerOffset = findAlignedZeroRun(member, provisionalBytes.length, 0x10);
+    if (markerOffset === -1) {
+      throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
+    }
+
+    const payloadRamAddress = SYNTH_OVERLAY_RAM_BASE + markerOffset;
+    const built = buildPayload(payloadRamAddress);
+    const payloadBytes = built.bytes || built;
+    const patchedMember = new Uint8Array(member);
+    patchedMember.set(payloadBytes, markerOffset);
+    replaceSyntheticOverlayMember(rom, patchedMember);
+    log.push(
+      `${label}: allocated synthetic-overlay payload at member ${hex(markerOffset)} / RAM ${hex(
+        payloadRamAddress
+      )}, ${hex(payloadBytes.length)} byte(s).`
+    );
+    return { markerOffset, payloadRamAddress, built, reused: false };
+  }
+
+  function chainCandyFunctionOffset() {
+    return align(CHAIN_CANDY_MARKER.length, 2);
+  }
+
+  function legacyChainCandyFunctionOffset() {
+    return align(LEGACY_CHAIN_CANDY_MARKER.length, 2);
+  }
+
+  function findExistingChainCandyFunction(rom) {
+    const { member } = readSyntheticOverlayMember(rom);
+    const markerOffsets = synthMarkerOffsets(member, CHAIN_CANDY_MARKER);
+    if (!markerOffsets.length) {
+      return null;
+    }
+
+    const hookAt = arm9Offset(rom, CHAIN_CANDY_HOOK_RAM, 4);
+    const hookTarget = decodeThumbBl(CHAIN_CANDY_HOOK_RAM, rom, hookAt);
+    const functionOffset = chainCandyFunctionOffset();
+    if (hookTarget != null) {
+      for (const markerOffset of markerOffsets) {
+        const functionRam = SYNTH_OVERLAY_RAM_BASE + markerOffset + functionOffset;
+        if (hookTarget === functionRam) {
+          return { markerOffset, functionRam, hookTarget };
+        }
+      }
+    }
+
+    const markerOffset = markerOffsets[markerOffsets.length - 1];
+    return {
+      markerOffset,
+      functionRam: SYNTH_OVERLAY_RAM_BASE + markerOffset + functionOffset,
+      hookTarget,
+    };
+  }
+
+  function isLegacyChainCandyHook(rom) {
+    const { member } = readSyntheticOverlayMember(rom);
+    const markerOffsets = synthMarkerOffsets(member, LEGACY_CHAIN_CANDY_MARKER);
+    if (!markerOffsets.length) {
+      return false;
+    }
+    const hookAt = arm9Offset(rom, CHAIN_CANDY_HOOK_RAM, 4);
+    const hookTarget = decodeThumbBl(CHAIN_CANDY_HOOK_RAM, rom, hookAt);
+    if (hookTarget == null) {
+      return false;
+    }
+    const functionOffset = legacyChainCandyFunctionOffset();
+    return markerOffsets.some(
+      (markerOffset) => hookTarget === SYNTH_OVERLAY_RAM_BASE + markerOffset + functionOffset
+    );
+  }
+
+  function legacyRemovalHookTargets(rom) {
+    const { member } = readSyntheticOverlayMember(rom);
+    const markerOffsets = synthMarkerOffsets(member, LEGACY_INFINITE_CANDY_MARKER);
+    const result = new Set();
+    const markerSize = align(LEGACY_INFINITE_CANDY_MARKER.length, 4);
+    for (const markerOffset of markerOffsets) {
+      const base = SYNTH_OVERLAY_RAM_BASE + markerOffset;
+      result.add(base + markerSize);
+      result.add(base + markerSize + 0x18);
+    }
+    return result;
+  }
+
+  function encryptMessageEntryOffset(entryID, bankKey, offset, length) {
+    let key = (bankKey * 765 * (entryID + 1)) & 0xffff;
+    key = (key | (key << 16)) >>> 0;
+    return { offset: (offset ^ key) >>> 0, length: (length ^ key) >>> 0 };
+  }
+
+  function encryptedPlatinumString(text, entryID) {
+    const codes = [];
+
+    function pushCode(code) {
+      codes.push(code & 0xffff);
+    }
+
+    for (let i = 0; i < text.length; i += 1) {
+      if (text.startsWith("{COLOR ", i)) {
+        const end = text.indexOf("}", i);
+        if (end === -1) {
+          throw new PatchError("Infinite Candy item text has an unterminated COLOR command.");
+        }
+        const value = Number(text.slice(i + 7, end));
+        if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+          throw new PatchError("Infinite Candy item text has an invalid COLOR command.");
+        }
+        pushCode(0xfffe);
+        pushCode(0xff00);
+        pushCode(1);
+        pushCode(value);
+        i = end;
+        continue;
+      }
+
+      const ch = text[i];
+      const codePoint = text.charCodeAt(i);
+      if (ch >= "0" && ch <= "9") {
+        pushCode(0x0121 + (codePoint - 48));
+      } else if (ch >= "A" && ch <= "Z") {
+        pushCode(0x012b + (codePoint - 65));
+      } else if (ch >= "a" && ch <= "z") {
+        pushCode(0x0145 + (codePoint - 97));
+      } else if (ch === " ") {
+        pushCode(0x01de);
+      } else if (ch === ",") {
+        pushCode(0x01ad);
+      } else if (ch === ".") {
+        pushCode(0x01ae);
+      } else if (ch === "-") {
+        pushCode(0x01be);
+      } else if (ch === "\n") {
+        pushCode(0xe000);
+      } else if (ch === "\r") {
+        pushCode(0x25bc);
+      } else if (ch === "\f") {
+        pushCode(0x25bd);
+      } else if (ch === "é") {
+        pushCode(0x0188);
+      } else if (ch === "'" || ch === "’") {
+        pushCode(0x01b3);
+      } else {
+        throw new PatchError(`Infinite Candy item text contains unsupported character "${ch}".`);
+      }
+    }
+    pushCode(0xffff);
+
+    let key = ((entryID + 1) * 596947) & 0xffff;
+    const out = new Uint8Array(codes.length * 2);
+    for (let i = 0; i < codes.length; i += 1) {
+      writeU16(out, i * 2, codes[i] ^ key);
+      key = (key + 18749) & 0xffff;
+    }
+    return out;
+  }
+
+  function replaceMessageBankEntry(bank, entryID, text) {
+    const count = readU16(bank, 0);
+    const bankKey = readU16(bank, 2);
+    if (entryID >= count) {
+      throw new PatchError(`Message bank has no entry ${entryID}.`);
+    }
+
+    const chunks = [];
+    let cursor = 4 + count * 8;
+    for (let i = 0; i < count; i += 1) {
+      const entryAt = 4 + i * 8;
+      const decoded = encryptMessageEntryOffset(i, bankKey, readU32(bank, entryAt), readU32(bank, entryAt + 4));
+      const size = decoded.length * 2;
+      if (decoded.offset + size > bank.length) {
+        throw new PatchError("Message bank entry points outside the message bank.");
+      }
+      chunks.push(i === entryID ? encryptedPlatinumString(text, entryID) : bank.slice(decoded.offset, decoded.offset + size));
+    }
+
+    const totalSize = 4 + count * 8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const out = new Uint8Array(totalSize);
+    writeU16(out, 0, count);
+    writeU16(out, 2, bankKey);
+    for (let i = 0; i < count; i += 1) {
+      const entry = encryptMessageEntryOffset(i, bankKey, cursor, chunks[i].length / 2);
+      writeU32(out, 4 + i * 8, entry.offset);
+      writeU32(out, 4 + i * 8 + 4, entry.length);
+      out.set(chunks[i], cursor);
+      cursor += chunks[i].length;
+    }
+    return out;
+  }
+
+  function patchRedChainItemText(rom, log) {
+    const file = findFileByPath(rom, "msgdata/pl_msg.narc");
+    const narc = rom.slice(file.start, file.end);
+    const replacements = [
+      [391, "A candy packed with energy.\nIt raises a Pokémon’s level by one."],
+      [392, "Infinite Candy"],
+      [393, "an {COLOR 255}Infinite Candy{COLOR 0}"],
+      [394, "Infinite Candies"],
+    ];
+    const replacedMembers = replacements.map(([memberId, text]) => [
+      memberId,
+      replaceMessageBankEntry(narcMemberBytes(narc, memberId), RED_CHAIN_ITEM_ID, text),
+    ]);
+    const patchedNarc = replaceNarcMembers(narc, replacedMembers);
+    const replacement = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Infinite Candy item text");
+    log.push(
+      `Infinite Candy: ${
+        replacement.state === "already" ? "item text already renamed" : "renamed Red Chain item text"
+      } in msgdata/pl_msg.narc members 391-394${replacement.growth ? `; ROM grew by ${replacement.growth} byte(s)` : ""}.`
+    );
+    return replacement.rom;
+  }
+
+  function patchRedChainCandyItemData(rom, log) {
+    const file = findFileByPath(rom, "itemtool/itemdata/pl_item_data.narc");
+    const narc = rom.slice(file.start, file.end);
+    const rareCandy = narcMemberBytes(narc, RARE_CANDY_ITEMDATA_MEMBER);
+    const redChain = narcMemberBytes(narc, RED_CHAIN_ITEMDATA_MEMBER);
+    if (rareCandy.length !== redChain.length || redChain.length < 0x0e) {
+      throw new PatchError("Red Chain item data is not the expected size.");
+    }
+
+    const patchedMember = new Uint8Array(rareCandy);
+    writeU16(patchedMember, 0x00, 0); // no sale price
+    writeU16(patchedMember, 0x08, 0x03bf); // type Normal, prevent toss, Key Items pocket, no battle pocket
+
+    if (bytesEqual(redChain, 0, patchedMember)) {
+      log.push("Infinite Candy: Red Chain item data already has Rare Candy behavior.");
+      return;
+    }
+
+    const patchedNarc = replaceNarcMembers(narc, [[RED_CHAIN_ITEMDATA_MEMBER, patchedMember]]);
+    replaceRomFile(rom, file, patchedNarc, "Infinite Candy item data");
+    log.push(
+      `Infinite Candy: replaced Red Chain item data member ${hex(
+        RED_CHAIN_ITEMDATA_MEMBER
+      )} with Key Item Rare Candy behavior.`
+    );
+  }
+
+  function patchInfiniteContinuousCandy(rom, force, log) {
+    let outRom = rom;
+    const status = dsPreArm9ExpansionStatus(outRom);
+    if (!(status.branchInstalled && status.initInstalled && status.synthAvailable)) {
+      log.push("Infinite Candy: DSPRE ARM9 expansion is required; installing it first.");
+      outRom = patchArm9Expansion(outRom, force, log);
+    }
+
+    patchRedChainCandyItemData(outRom, log);
+    outRom = patchRedChainItemText(outRom, log);
+
+    let chain = findExistingChainCandyFunction(outRom);
+    if (!chain) {
+      const allocated = allocateSyntheticPayload(
+        outRom,
+        CHAIN_CANDY_MARKER,
+        buildChainCandyPayload,
+        log,
+        "Infinite Candy chain helper",
+        { updateExisting: true }
+      );
+      chain = {
+        markerOffset: allocated.markerOffset,
+        functionRam: allocated.payloadRamAddress + chainCandyFunctionOffset(),
+        hookTarget: null,
+      };
+    } else {
+      log.push(
+        `Infinite Candy: reused existing chain-candy marker at synthetic member ${hex(
+          chain.markerOffset
+        )} / helper RAM ${hex(chain.functionRam)}.`
+      );
+    }
+
+    const chainHookAt = arm9Offset(outRom, CHAIN_CANDY_HOOK_RAM, 4);
+    const chainHook = new Uint8Array(thumbBl(CHAIN_CANDY_HOOK_RAM, chain.functionRam));
+    const chainExpected = bytesFromHex("08 70 20 20");
+    let chainState = "patch";
+    if (bytesEqual(outRom, chainHookAt, chainHook)) {
+      chainState = "already";
+    } else if (!bytesEqual(outRom, chainHookAt, chainExpected) && !isLegacyChainCandyHook(outRom) && !force) {
+      const found = Array.from(outRom.slice(chainHookAt, chainHookAt + chainExpected.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Infinite Candy chain hook sanity check failed at ${hex(chainHookAt)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    if (chainState !== "already") {
+      writeBytes(outRom, chainHookAt, chainHook);
+    }
+
+    const infinite = allocateSyntheticPayload(
+      outRom,
+      INFINITE_CANDY_MARKER,
+      buildInfiniteCandyPayload,
+      log,
+      "Infinite Candy removal helper",
+      { updateExisting: true }
+    );
+    const infiniteBuilt = infinite.built;
+    const bagHelperRam = infiniteBuilt.bagHelperRam;
+    const pocketHelperRam = infiniteBuilt.pocketHelperRam;
+
+    const bagHookAt = arm9Offset(outRom, BAG_TRY_REMOVE_ITEM_HOOK_RAM, 8);
+    const pocketHookAt = arm9Offset(outRom, POCKET_TRY_REMOVE_ITEM_HOOK_RAM, 8);
+    const bagHook = literalJump(bagHelperRam);
+    const pocketHook = literalJump(pocketHelperRam);
+    const legacyRemovalTargets = legacyRemovalHookTargets(outRom);
+    function removalHookState(offset, expected, patched, label) {
+      if (bytesEqual(outRom, offset, patched)) {
+        return "already";
+      }
+      const target = decodeLiteralJump(outRom, offset);
+      if (bytesEqual(outRom, offset, expected) || (target != null && legacyRemovalTargets.has(target)) || force) {
+        return "patch";
+      }
+      const found = Array.from(outRom.slice(offset, offset + expected.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(`${label} sanity check failed at ${hex(offset)}. Found ${found}. Enable compatible modified bytes to patch anyway.`);
+    }
+    const bagState = removalHookState(
+      bagHookAt,
+      BAG_TRY_REMOVE_ITEM_EXPECTED,
+      bagHook,
+      "Infinite Candy Bag_TryRemoveItem hook"
+    );
+    const pocketState = removalHookState(
+      pocketHookAt,
+      POCKET_TRY_REMOVE_ITEM_EXPECTED,
+      pocketHook,
+      "Infinite Candy Pocket_TryRemoveItem hook"
+    );
+    if (bagState !== "already") {
+      writeBytes(outRom, bagHookAt, bagHook);
+    }
+    if (pocketState !== "already") {
+      writeBytes(outRom, pocketHookAt, pocketHook);
+    }
+
+    if (chainState === "already" && bagState === "already" && pocketState === "already") {
+      log.push(
+        `Infinite Candy: already patched; chain hook RAM ${hex(
+          CHAIN_CANDY_HOOK_RAM
+        )}, Bag/Pocket hooks RAM ${hex(BAG_TRY_REMOVE_ITEM_HOOK_RAM)} and ${hex(
+          POCKET_TRY_REMOVE_ITEM_HOOK_RAM
+        )}.`
+      );
+    } else {
+      log.push(
+        `Infinite Candy: chain hook RAM ${hex(CHAIN_CANDY_HOOK_RAM)} -> ${hex(
+          chain.functionRam
+        )}; removal hooks RAM ${hex(BAG_TRY_REMOVE_ITEM_HOOK_RAM)} -> ${hex(
+          bagHelperRam
+        )} and ${hex(POCKET_TRY_REMOVE_ITEM_HOOK_RAM)} -> ${hex(pocketHelperRam)}.`
+      );
+    }
+
+    return outRom;
+  }
+
   function patchInstantText(rom, force, log) {
     const stub = bytesFromHex("01 20 70 47");
 
@@ -4051,11 +5220,13 @@
   }
 
   const PATCH_IMPLS = {
+    arm9Expansion: patchArm9Expansion,
     frameRate: patchFrameRateUnlock,
     shinyOdds: patchShinyOdds,
     critOdds: patchCritOdds,
     critDamage: patchCritDamage15,
     noCrits: patchNoCrits,
+    removeEVs: patchRemoveEVs,
     modernParalysis: patchModernParalysis,
     modernBurn: patchModernBurn,
     modernSleep: patchModernSleep,
@@ -4065,6 +5236,15 @@
     wildNatures: patchWildNatures,
     movementSpeed: patchMovementSpeed,
     noOverworldPoison: patchNoOverworldPoison,
+    infiniteContinuousCandy: patchInfiniteContinuousCandy,
+    instantPartyHealing: patchInstantPartyHealing,
+    timeOfDayEvos: patchTimeOfDayEvos,
+    vsSeekerQol: patchVsSeekerQol,
+    removeSurfWaterfallChecks: patchRemoveSurfWaterfallChecks,
+    drySkinAiFix: patchDrySkinAiFix,
+    forgettableHMs: patchForgettableHMs,
+    instantPokeradar: patchInstantPokeradar,
+    infiniteTMs: patchInfiniteTMs,
     fairyType: patchFairyType,
     fairyPokemonTypes: patchFairyPokemonTypes,
     instantText: patchInstantText,
@@ -4073,7 +5253,7 @@
   };
 
   function applySelectedPatches(inputBytes, patchIds, options = {}) {
-    const rom = new Uint8Array(inputBytes);
+    let rom = new Uint8Array(inputBytes);
     const log = [];
     const debugFairyBattleTest = Boolean(options.debugFairyBattleTest);
     if (rom.length < 0x200) {
@@ -4087,6 +5267,9 @@
     if (selected.has("fairyPokemonTypes")) {
       selected.add("fairyType");
     }
+    if (selected.has("infiniteContinuousCandy")) {
+      selected.add("arm9Expansion");
+    }
     if (debugFairyBattleTest && !selected.has("fairyType")) {
       throw new PatchError("DEBUG Fairy battle test requires the Fairy Patch.");
     }
@@ -4094,9 +5277,13 @@
       selected.add("fairyPokemonTypes");
     }
     const effectivePatchIds = Array.from(selected);
-    const orderedPatchIds = selected.has("fairyType")
-      ? ["fairyType", ...effectivePatchIds.filter((patchId) => patchId !== "fairyType")]
-      : effectivePatchIds;
+    const orderedPatchIds = [
+      ...(selected.has("arm9Expansion") ? ["arm9Expansion"] : []),
+      ...(selected.has("fairyType") ? ["fairyType"] : []),
+      ...effectivePatchIds.filter(
+        (patchId) => patchId !== "arm9Expansion" && patchId !== "fairyType"
+      ),
+    ];
     for (const patchId of orderedPatchIds) {
       if (patchId === "instantText" && selected.has("text4x")) {
         continue;
@@ -4105,7 +5292,10 @@
       if (!patch) {
         throw new PatchError(`Unknown patch: ${patchId}`);
       }
-      patch(rom, Boolean(options.force), log, options);
+      const patchResult = patch(rom, Boolean(options.force), log, options);
+      if (patchResult instanceof Uint8Array) {
+        rom = patchResult;
+      }
     }
 
     if (debugFairyBattleTest) {
@@ -4122,6 +5312,8 @@
       .map((id) =>
         id === "frameRate"
           ? `framerate${frameRateModeText(options)}`
+          : id === "arm9Expansion"
+          ? "arm9expanded"
           : id === "text4x"
           ? `text${textCharsPerFrameOption(options)}x`
           : id === "shinyOdds"
@@ -4148,6 +5340,26 @@
               ? `natures${natureMaskText(options)}`
             : id === "noOverworldPoison"
               ? "nooverworldpoison"
+            : id === "infiniteContinuousCandy"
+              ? "infinitecandy"
+            : id === "removeEVs"
+              ? "noevs"
+            : id === "instantPartyHealing"
+              ? "instanthealing"
+            : id === "timeOfDayEvos"
+              ? "notimeevos"
+            : id === "vsSeekerQol"
+              ? "vsseekerqol"
+            : id === "removeSurfWaterfallChecks"
+              ? "nosurffallchecks"
+            : id === "drySkinAiFix"
+              ? "dryskinfix"
+            : id === "forgettableHMs"
+              ? "forgettablehms"
+            : id === "instantPokeradar"
+              ? "instantpokeradar"
+            : id === "infiniteTMs"
+              ? "infinitetms"
             : id.replace(/_/g, "")
       )
       .join(".");
@@ -4172,6 +5384,7 @@
     const logOutput = document.getElementById("logOutput");
     const romStatus = document.getElementById("romStatus");
     const fileSubtitle = document.getElementById("fileSubtitle");
+    const arm9ExpansionStatus = document.getElementById("arm9ExpansionStatus");
     const patchGrid = document.getElementById("patchGrid");
     const patchInfoModal = document.getElementById("patchInfoModal");
     const patchInfoTitle = document.getElementById("patchInfoTitle");
@@ -4200,6 +5413,44 @@
 
     function setLog(lines) {
       logOutput.textContent = Array.isArray(lines) ? lines.join("\n") : lines;
+    }
+
+    function updateArm9ExpansionStatus(bytes) {
+      arm9ExpansionStatus.classList.remove("ready", "missing");
+      if (!bytes) {
+        arm9ExpansionStatus.textContent = "Load a ROM to check expansion status.";
+        return;
+      }
+
+      try {
+        const status = dsPreArm9ExpansionStatus(bytes);
+        const installed = status.branchInstalled && status.initInstalled && status.synthAvailable;
+        arm9ExpansionStatus.classList.add(installed ? "ready" : "missing");
+        if (installed) {
+          arm9ExpansionStatus.textContent = `Installed - synthetic member ${hex(
+            status.synthMemberLength
+          )} bytes`;
+        } else {
+          const missing = [];
+          if (!status.branchInstalled) {
+            missing.push("ARM9 branch");
+          }
+          if (!status.initInstalled) {
+            missing.push("loader");
+          }
+          if (!status.synthAvailable) {
+            missing.push(
+              status.synthMemberLength
+                ? `synthetic member is ${hex(status.synthMemberLength)} bytes`
+                : "synthetic member"
+            );
+          }
+          arm9ExpansionStatus.textContent = `Not installed - ${missing.join(", ")}`;
+        }
+      } catch (error) {
+        arm9ExpansionStatus.classList.add("missing");
+        arm9ExpansionStatus.textContent = "Could not read expansion status.";
+      }
     }
 
     function clearDownload() {
@@ -4426,6 +5677,7 @@
     updateCritOddsValue();
     updateIvRangeValue();
     updateNatureCount();
+    updateArm9ExpansionStatus();
     textCharsPerFrameInput.addEventListener("input", () => {
       updateTextSpeedValue();
       clearDownload();
@@ -4483,6 +5735,7 @@
         applyButton.disabled = true;
         romStatus.textContent = `No ROM loaded · ${APP_VERSION}`;
         romStatus.classList.remove("ready");
+        updateArm9ExpansionStatus();
         fileSubtitle.textContent = "The patched ROM is generated locally in your browser.";
         setLog("Waiting for a ROM.");
         return;
@@ -4494,6 +5747,7 @@
         applyButton.disabled = false;
         romStatus.textContent = `${loadedFile.name} loaded · ${APP_VERSION}`;
         romStatus.classList.add("ready");
+        updateArm9ExpansionStatus(loadedBytes);
         fileSubtitle.textContent = `${loadedFile.name} - ${(loadedFile.size / 1024 / 1024).toFixed(
           1
         )} MB`;
@@ -4506,6 +5760,7 @@
         applyButton.disabled = true;
         romStatus.textContent = "Load failed";
         romStatus.classList.remove("ready");
+        updateArm9ExpansionStatus();
         setLog(`Error: ${error.message}`);
       }
     });
@@ -4546,11 +5801,23 @@
   }
 
   if (typeof window !== "undefined") {
-    window.PlatinumPatcher = { applySelectedPatches, PATCHES, PatchError, config: CONSOLE_CONFIG };
+    window.PlatinumPatcher = {
+      applySelectedPatches,
+      arm9ExpansionStatus: dsPreArm9ExpansionStatus,
+      PATCHES,
+      PatchError,
+      config: CONSOLE_CONFIG,
+    };
     window.addEventListener("DOMContentLoaded", initUi);
   }
 
   if (typeof module !== "undefined") {
-    module.exports = { applySelectedPatches, PATCHES, PatchError, config: CONSOLE_CONFIG };
+    module.exports = {
+      applySelectedPatches,
+      arm9ExpansionStatus: dsPreArm9ExpansionStatus,
+      PATCHES,
+      PatchError,
+      config: CONSOLE_CONFIG,
+    };
   }
 })();

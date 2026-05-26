@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=32" />
+    <link rel="stylesheet" href="./styles.css?v=36" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v32</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v36</div>
       </section>
 
       <section class="panel upload-panel">
@@ -34,6 +34,23 @@
         </div>
 
         <div class="patch-sections" id="patchGrid">
+          <section class="patch-section" aria-labelledby="infrastructureHeading">
+            <div class="patch-section-heading">
+              <h3 id="infrastructureHeading">Infrastructure</h3>
+            </div>
+
+            <div class="patch-grid">
+              <label class="patch-card patch-card-config">
+                <input id="arm9ExpansionPatch" type="checkbox" value="arm9Expansion" />
+                <span>
+                  <strong>DSPRE ARM9 expansion</strong>
+                  <small>Installs the synthetic-overlay setup used by DSPRE and G4Patcher code-injection patches.</small>
+                  <small class="patch-status" id="arm9ExpansionStatus">Load a ROM to check expansion status.</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
           <section class="patch-section" aria-labelledby="battleMechanicsHeading">
             <div class="patch-section-heading">
               <h3 id="battleMechanicsHeading">Battle Mechanics</h3>
@@ -145,6 +162,22 @@
               </label>
 
               <label class="patch-card">
+                <input type="checkbox" value="removeEVs" />
+                <span>
+                  <strong>Remove EV gain</strong>
+                  <small>Pokemon no longer gain EVs from battle rewards.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="drySkinAiFix" />
+                <span>
+                  <strong>Dry Skin AI fix</strong>
+                  <small>Corrects the trainer AI value used for Dry Skin ability scoring.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
                 <input type="checkbox" value="playerAccuracy" />
                 <span>
                   <strong>Player accuracy bypass</strong>
@@ -251,6 +284,70 @@
                   <small>Poisoned party Pokemon no longer take damage from walking.</small>
                 </span>
               </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="infiniteContinuousCandy" />
+                <span>
+                  <strong>Infinite Candy</strong>
+                  <small>Turns the Red Chain key item into a reusable Rare Candy-style party item.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="instantPartyHealing" />
+                <span>
+                  <strong>Instant party healing</strong>
+                  <small>Party-menu healing items finish their healing animation faster.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="timeOfDayEvos" />
+                <span>
+                  <strong>Remove time evo clock checks</strong>
+                  <small>Held-item time-of-day evolutions ignore the DS clock requirement.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="vsSeekerQol" />
+                <span>
+                  <strong>VS Seeker QoL</strong>
+                  <small>Speeds up recharge and improves the trainer-rematch roll.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="removeSurfWaterfallChecks" />
+                <span>
+                  <strong>Remove Surf/Waterfall checks</strong>
+                  <small>Surf and Waterfall no longer require a party Pokemon with the HM move.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="forgettableHMs" />
+                <span>
+                  <strong>Forgettable HMs</strong>
+                  <small>HMs can be forgotten like ordinary moves.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="instantPokeradar" />
+                <span>
+                  <strong>Instant Pokeradar recharge</strong>
+                  <small>The Pokeradar can be reused without walking the usual recharge steps.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="infiniteTMs" />
+                <span>
+                  <strong>Infinite TMs</strong>
+                  <small>TMs are no longer consumed after use.</small>
+                </span>
+              </label>
             </div>
           </section>
         </div>
@@ -277,6 +374,11 @@
           <cite>Fairy Type in Pokemon Platinum</cite>
           (<a href="https://pokehacking.com/r/20071800" rel="noreferrer">pokehacking.com/r/20071800</a>)
         </p>
+        <p>G4Patcher simple patch references: Kalaay.</p>
+        <p>
+          Continuous Rare Candy reference: Yako, Kalaay, Mixone; pokeplatinum team; Mikelan98 and
+          Nomura for the ARM9 expansion basis.
+        </p>
       </footer>
 
       <dialog class="info-modal" id="patchInfoModal">
@@ -290,6 +392,6 @@
       </dialog>
     </main>
 
-    <script src="./app.js?v=32"></script>
+    <script src="./app.js?v=36"></script>
   </body>
 </html>

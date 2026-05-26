@@ -6,9 +6,11 @@ The patching is local browser-side JavaScript. No ROM data is uploaded.
 
 Included patches:
 
+- DSPRE ARM9 expansion infrastructure
 - No critical hits
 - Critical hit odds, configurable as the base critical-hit divisor
 - Critical damage 1.5x
+- Remove EV gain
 - Modern paralysis mechanics: Electric-type immunity, 12.5% full paralysis, and 50% Speed reduction
 - Modern burn mechanics: Facade ignores burn's physical damage reduction, and burn chip damage is 1/16 max HP
 - Modern sleep mechanics: two-turn maximum with a 33% second-turn wake chance
@@ -19,6 +21,15 @@ Included patches:
 - Experimental framerate unlock, configurable as battle-only or global
 - Faster player walk/run/cycling movement
 - Remove overworld poison step damage
+- Infinite Candy, replacing the Red Chain key item
+- Instant party healing
+- Remove time-of-day evolution clock checks
+- VS Seeker QoL
+- Remove Surf/Waterfall party move checks
+- Forgettable HMs
+- Instant Pokeradar recharge
+- Infinite TMs
+- Dry Skin AI fix
 - Fairy Patch with optional Pokemon type updates
 - Shiny odds, configurable by integer percentage from 0% to 100%
 - Experimental normal async text speed, configurable from 2x to 10x
@@ -27,10 +38,13 @@ Included patches:
 Notes:
 
 - These offsets target `pkaizo.nds` first, with clean US Pokemon Platinum as the compatibility baseline.
+- The DSPRE ARM9 expansion patch installs the small ARM9 loader branch and expands `data/weather_sys.narc` member `9` to the synthetic-overlay size used by DSPRE and G4Patcher. If the ROM already has the expansion, the patcher preserves the existing synthetic overlay contents instead of blanking it.
 - The nature filter intentionally replaces wild nature generation with an allowed-nature table, so Synchronize no longer forces banned wild natures. It defaults to all 25 natures allowed; toggle off any natures you want to block.
 - The IV range patch rerolls each generated IV until it lands between the selected minimum and maximum, inclusive. The default range is `15-31`.
 - The movement patch now edits player movement constants instead of global movement action function tables. If it sees the older global movement edits made by this patcher, it restores those pointers before applying the safer player-scoped version.
 - The remove overworld poison patch disables the step-based poison damage routine in the field. It does not change poison damage in battle.
+- The Infinite Candy patch turns the Red Chain key item into a reusable Rare Candy-style party item. It requires the player to already own the Red Chain, renames it to Infinite Candy, keeps it in Key Items, blocks tossing, prevents removal when used, and returns to the party target prompt after ordinary successful level-ups. Evolution and other special item flows are left to the normal game code.
+- The G4Patcher simple patches are direct byte edits ported into the browser patcher with sanity checks. They do not use the DSPRE synthetic overlay.
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
 - The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
 - The critical damage patch hooks the two battle damage multiplication sites so normal crits scale to `1.5x` instead of `2x`. Sniper crits scale from `3x` to `2.25x`.
@@ -53,6 +67,8 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 
 | Patch | ARM9 RAM range | ROM file range | Size | Notes |
 | --- | --- | --- | --- | --- |
+| DSPRE ARM9 expansion branch | `0x02000CB4-0x02000CB7` | `0x00004CB4-0x00004CB7` | `0x4` | Branches into the synthetic-overlay loader setup used by DSPRE. |
+| DSPRE ARM9 synthetic-overlay loader | `0x02101574-0x0210158C` | `0x00105574-0x0010558C` | `0x19` | Loader init stub for `data/weather_sys.narc` member `9` at RAM `0x023C8000`. |
 | Unlock framerate, global | `0x02000DF8-0x02000DF9` | `0x00004DF8-0x00004DF9` | `0x2` | NOPs the `gSystem.frameCounter` reset halfword. |
 | Unlock framerate, battle only hook | `0x02000DF2-0x02000DF9` | `0x00004DF2-0x00004DF9` | `0x8` | Replaces the surrounding VBlank counter/reset sequence with a `bl` hook. |
 | Unlock framerate, battle only helper | `0x020F93D0-0x020F93EB` | `0x000FD3D0-0x000FD3EB` | `0x1C` | Preferred helper cave. Reads the battle overlay signature at `0x0224A948`. |
@@ -67,6 +83,15 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Faster movement constants | `0x020603A8-0x020603A9` | `0x000643A8-0x000643A9` | `0x2` | Bike low-gear action. |
 | Faster movement constants | `0x020603AC-0x020603AD` | `0x000643AC-0x000643AD` | `0x2` | Bike mid-gear action. |
 | Faster movement constants | `0x020603B0-0x020603B1` | `0x000643B0-0x000643B1` | `0x2` | Bike high-gear action. |
+| Instant party healing | `0x02085734-0x02085735` | `0x00089734-0x00089735` | `0x2` | Speeds up party-menu item healing. |
+| Remove time evo clock checks | `0x02076DFA-0x02076DFD` | `0x0007ADFA-0x0007ADFD` | `0x4` | First held-item time evolution clock check. |
+| Remove time evo clock checks | `0x02076DE2-0x02076DE5` | `0x0007ADE2-0x0007ADE5` | `0x4` | Second held-item time evolution clock check. |
+| Forgettable HMs | `0x0208CDD2-0x0208CDD7` | `0x00090DD2-0x00090DD7` | `0x6` | ARM9 HM forget check. |
+| Instant Pokeradar recharge | `0x02069A42` | `0x0006DA42` | `0x1` | Pokeradar recharge step count. |
+| Infinite TMs | `0x020865EB` | `0x0008A5EB` | `0x1` | ARM9 item-use branch byte. |
+| Infinite Candy chain hook | `0x02085EC6-0x02085EC9` | `0x00089EC6-0x00089EC9` | `0x4` | Branches to the continuous-use helper. Existing Kalaay/Yako/Mixone Rare Candy chain hooks in the synthetic overlay are detected and migrated to the Red Chain item ID. |
+| Infinite Candy Bag_TryRemoveItem hook | `0x0207D60C-0x0207D613` | `0x0008160C-0x00081613` | `0x8` | Literal jump to the synthetic-overlay helper. Red Chain / Infinite Candy returns TRUE without reducing quantity; other items replay the overwritten prologue and return to the original function. |
+| Infinite Candy Pocket_TryRemoveItem hook | `0x0207D658-0x0207D65F` | `0x00081658-0x0008165F` | `0x8` | Same infinite-removal guard for bag-pocket removal paths. |
 | Force fast text | `0x02027AC0-0x02027AD9` | `0x0002BAC0-0x0002BAD9` | `0x1A` | Field text-speed helper. |
 | Experimental text speed hook | `0x0201D97C-0x0201D983` | `0x0002197C-0x00021983` | `0x8` | Hooks the async text-printer task runner. |
 | Experimental text speed helper | `0x020795E0-0x0207969B` | `0x0007D5E0-0x0007D69B` | `0xBC` | Preferred helper cave; can fallback to another free ARM9 fill run. |
@@ -79,7 +104,9 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
-These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, wild nature filter, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
+Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Older `chain_candy_start` and `inf_candy_remove_v1` helpers are detected so already-patched ROMs can migrate cleanly. New helpers are dynamically placed into the first large enough 16-byte-aligned zero-filled run unless an existing marker is found.
+
+These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, Remove EV gain, wild nature filter, Remove Surf/Waterfall checks, VS Seeker QoL, Dry Skin AI fix, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
 
 ## Overlay usage map
 
@@ -89,15 +116,24 @@ Observed overlay bases:
 
 | Overlay | Loaded RAM base | pkaizo ROM file range | Notes |
 | --- | --- | --- | --- |
-| Overlay 5 | `0x021D0040` | `0x00151A00-0x001631DF` | Overworld field routines. |
+| Overlay 5 | `0x021D0D80` | `0x00151600-0x0018299F` | Overworld field routines. |
 | Overlay 6 | `0x0223E140` | `0x00182A00-0x0018E1FF` | Wild encounter-related routines. |
+| Overlay 13 | `0x0221FC20` | `0x001C2C00-0x001CCDFF` | Move-learning and party menu routines. |
+| Overlay 14 | `0x0221FC20` | `0x001CCE00-0x001DC25F` | Trainer AI routines. |
 | Overlay 16 | `0x0223B140` | `0x001DC600-0x0021209F` | Battle code and battle type-effectiveness logic. |
 | Overlay 21 | `0x021D0D80` | `0x0026BE00-0x00284FFF` | Pokedex display code. |
+| Overlay 84 | `0x0223B5A0` | `0x00366600-0x0036C49F` | Item-use overlay used by TM consumption. |
 
 | Patch | Overlay | Relative range | Loaded RAM range | pkaizo ROM file range | Size | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Remove overworld poison | 5 | `0x1BA4-0x1BBB` | `0x021D1BE4-0x021D1BFB` | `0x001531A4-0x001531BB` | `0x18` | Skips the step-based poison damage/check sequence in the overworld. |
+| Remove Surf/Waterfall checks | 5 | `0x1AB2-0x1AB5` | `0x021D2832-0x021D2835` | `0x001530B2-0x001530B5` | `0x4` | Allows Surf and Waterfall without requiring the matching HM move in the party. |
+| VS Seeker QoL | 5 | `0xAE44-0xAE46` | `0x021DBBC4-0x021DBBC6` | `0x0015C444-0x0015C446` | `0x3` | Recharge/rematch byte edit. |
+| VS Seeker QoL | 5 | `0xAFA8` | `0x021DBD28` | `0x0015C5A8` | `0x1` | Rematch chance byte edit. |
 | Wild nature filter | 6 | `0x39A4-0x39FF` | `0x02241AE4-0x02241B3F` | `0x001863A4-0x001863FF` | `0x5C` | Replaces the wild nature generation routine with the allowed-nature table patch. |
+| Forgettable HMs | 13 | `0x94E-0x953` | `0x0222056E-0x02220573` | `0x001C354E-0x001C3553` | `0x6` | Overlay HM forget check. |
+| Dry Skin AI fix | 14 | `0x4DAC` | `0x022249CC` | `0x001D1BAC` | `0x1` | Corrects the trainer AI value used for Dry Skin. |
+| Remove EV gain | 16 | `0xEA3C-0xEA3F` | `0x02249B7C-0x02249B7F` | `0x001EB03C-0x001EB03F` | `0x4` | Removes the EV reward write in battle. |
 | Critical hit odds table | 16 | `0x33A60-0x33A64` clean, `0x33A7C-0x33A80` pkaizo | `0x0226EBA0-0x0226EBA4` clean, `0x0226EBBC-0x0226EBC0` pkaizo | `0x0021007C-0x00210080` pkaizo | `0x5` | Edits only the base divisor byte; the rest of the stage divisor table remains `08 04 03 02`. |
 | No critical hits | 16 | `0x1FDA4-0x1FDA7` clean, `0x1FDC0-0x1FDC3` pkaizo | `0x0225AEE4-0x0225AEE7` clean, `0x0225AF00-0x0225AF03` pkaizo | `0x001FC3C0-0x001FC3C3` pkaizo | `0x4` | Writes a return stub in the critical-hit multiplier function. Offset follows the crit-rate table fallback shift. |
 | Critical damage 1.5x normal hook | 16 | `0x62B8-0x62C3` | `0x022413F8-0x02241403` | `0x001E28B8-0x001E28C3` | `0xC` | Replaces the normal damage critical multiplier with a branch to the overlay helper. |
@@ -122,11 +158,20 @@ Observed overlay bases:
 | Player accuracy trampoline | 16 | `0x140FA-0x1410B` clean, `0x140FE-0x1410F` pkaizo | `0x0224F23A-0x0224F24B` clean, `0x0224F23E-0x0224F24F` pkaizo | `0x001F06FE-0x001F070F` pkaizo | `0x12` | Branches standard accuracy miss handling to the overlay helper. |
 | Player accuracy helper | 16 | `0x34C68-0x34C83` preferred, `0x34C84-0x34C9F` pkaizo observed | `0x0226FDB8-0x0226FDD3` preferred, `0x0226FDC4-0x0226FDDF` pkaizo observed | `0x00211284-0x0021129F` pkaizo observed | `0x1C` | Preferred `0xFF` overlay code cave; can fallback to another free `0xFF` fill run. |
 | Fairy Pokedex type display | 21 | `0xE408-0xE477` | `0x021DF188-0x021DF1F7` | `0x0027A208-0x0027A277` | `0x70` | Pokedex type icon routing for type `0x09`. |
+| Infinite TMs | 84 | `0x4372-0x4375` | `0x0223F912-0x0223F915` | `0x0036A972-0x0036A975` | `0x4` | NOPs the TM consume call in the item-use overlay. |
 
 The Fairy Patch also modifies NARC assets outside overlays: `battle/graphic/pl_batt_obj.narc` members `74` and `236`, and `resource/eng/zukan/zukan.narc` members `88`, `89`, and `90`. Optional Fairy Pokemon type updates modify only bytes `6` and `7` of selected entries in `poketool/personal/pl_personal.narc`.
+
+Infinite Candy also modifies NARC data outside overlays: `itemtool/itemdata/pl_item_data.narc` member `0x1A3`, replacing Red Chain item data with Rare Candy party-use behavior while keeping it in the Key Items pocket. It also renames Red Chain text through `msgdata/pl_msg.narc` members `391`, `392`, `393`, and `394`, entry `441`. Its helper code is stored in `data/weather_sys.narc` member `9`, alongside other DSPRE/G4Patcher-style synthetic-overlay code.
+
+The DSPRE ARM9 expansion modifies NARC storage outside overlays: `data/weather_sys.narc` member `9` is expanded to `0x16000` bytes. On ROMs without enough padding after that NARC, the installer grows the ROM, shifts later file data forward, updates affected FAT entries, and updates the NDS size/capacity header fields.
 
 Modern sleep also edits the battle script byte sequence for `subscript_fall_asleep`, changing `Random 3, 2` to `Random 1, 3` before `BATTLEMON_STATUS` is updated. Observed ROM offsets are `0x008BDC08` in pkaizo and `0x03960E00` in clean US Platinum.
 
 Modern burn also edits the battle script byte sequence for `subscript_burn_damage`, changing `DivideVarByValue BTLVAR_HP_CALC_TEMP, 8` to `DivideVarByValue BTLVAR_HP_CALC_TEMP, 16`. Observed divisor offsets are `0x008BEDC4` in pkaizo and `0x03961FBC` in clean US Platinum.
 
 Fairy type research credit: Mikelan98 and BagBoy, "Fairy Type in Pokemon Platinum" (`pokehacking.com/r/20071800`).
+
+G4Patcher simple patch references credit: Kalaay.
+
+Continuous Rare Candy reference credit: Yako, Kalaay, Mixone; pokeplatinum team; Mikelan98 and Nomura for the ARM9 expansion basis.

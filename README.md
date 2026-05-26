@@ -9,10 +9,16 @@ Included patches:
 - No critical hits
 - Critical hit odds, configurable as the base critical-hit divisor
 - Critical damage 1.5x
+- Modern paralysis mechanics: Electric-type immunity, 12.5% full paralysis, and 50% Speed reduction
+- Modern burn mechanics: Facade ignores burn's physical damage reduction, and burn chip damage is 1/16 max HP
+- Modern sleep mechanics: two-turn maximum with a 33% second-turn wake chance
+- Modern confusion mechanics: one-third self-hit chance
+- Modern snow mechanics: Hail no longer deals chip damage and Ice-types get the physical Defense boost
 - Random IV range, configurable from 0-31
 - Wild nature filter with 25 selectable nature toggles
 - Experimental framerate unlock, configurable as battle-only or global
 - Faster player walk/run/cycling movement
+- Remove overworld poison step damage
 - Fairy Patch with optional Pokemon type updates
 - Shiny odds, configurable by integer percentage from 0% to 100%
 - Experimental normal async text speed, configurable from 2x to 10x
@@ -24,9 +30,15 @@ Notes:
 - The nature filter intentionally replaces wild nature generation with an allowed-nature table, so Synchronize no longer forces banned wild natures. It defaults to all 25 natures allowed; toggle off any natures you want to block.
 - The IV range patch rerolls each generated IV until it lands between the selected minimum and maximum, inclusive. The default range is `15-31`.
 - The movement patch now edits player movement constants instead of global movement action function tables. If it sees the older global movement edits made by this patcher, it restores those pointers before applying the safer player-scoped version.
+- The remove overworld poison patch disables the step-based poison damage routine in the field. It does not change poison damage in battle.
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
 - The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
 - The critical damage patch hooks the two battle damage multiplication sites so normal crits scale to `1.5x` instead of `2x`. Sniper crits scale from `3x` to `2.25x`.
+- The modern paralysis patch changes the full-paralysis turn-loss roll from `1/4` to `1/8`, changes the Speed penalty from `1/4` Speed to `1/2` Speed, and hooks battle-script status updates so Electric-type battlers have the paralysis bit cleared before the game writes the status back.
+- The modern burn patch hooks the physical damage burn reduction so move `0x0107` / Facade skips that halving, and changes residual burn damage from `1/8` max HP to `1/16` max HP. It does not change Guts or Facade's existing status power boost.
+- The modern sleep patch changes newly applied battle sleep from a random `2-4` counter to a fixed `3` counter, then hooks the battle sleep decrement path. That gives a guaranteed first asleep action, a roughly 33% wake chance on the second action, and a guaranteed wake on the third action.
+- The modern confusion patch leaves confusion duration alone, but changes the self-hit roll from `BattleSystem_RandNext & 1` to a one-third threshold check.
+- The modern snow MVP keeps Platinum's existing Hail weather slot and text/resources. It removes end-of-turn Hail chip damage, preserves Ice Body healing, and adds the modern Ice-type physical Defense boost while Hail/Snow is active. Existing Hail interactions such as Blizzard, Solar Beam, Weather Ball, Snow Cloak, and Forecast continue to use the same weather flag.
 - The Fairy Patch replaces the existing ??? type slot (`0x09`) with Fairy battle logic, battle UI assets, and Pokedex type icon assets. Its optional Pokemon type update changes only personal-data type bytes for the Kanto-Sinnoh base-form retypes, leaving Altaria unchanged because Platinum has no Mega Evolution form.
 - For quick Fairy battle testing, the browser console can enable `window.PlatinumPatcher.config.debugFairyBattleTest = true` before applying Fairy Patch. This hidden debug mode also applies Pokemon type updates, turns non-Fairy Pokemon into mono Fighting, changes all moves into Fairy type, and changes wild encounter species slots to Jigglypuff.
 - The shiny odds patch edits the ARM9 `Pokemon_IsPersonalityShiny` threshold. The UI maps integer percentages from `0%` to `100%` onto the closest threshold out of `65536`; for example `50%` becomes threshold `32768`, and `100%` becomes threshold `65536`. Thresholds up to `255` use the original one-byte `cmp r0, #imm8` edit; higher thresholds rewrite the small shiny predicate in place so no code cave is needed.
@@ -59,6 +71,11 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Experimental text speed hook | `0x0201D97C-0x0201D983` | `0x0002197C-0x00021983` | `0x8` | Hooks the async text-printer task runner. |
 | Experimental text speed helper | `0x020795E0-0x0207969B` | `0x0007D5E0-0x0007D69B` | `0xBC` | Preferred helper cave; can fallback to another free ARM9 fill run. |
 | Fairy Patch ARM9 helper | `0x020F9400-0x020F943F` | `0x000FD400-0x000FD43F` | `0x40` | Type-effectiveness nibble-table reader helper. |
+| Modern paralysis helper | `0x020F30B4-0x020F30F7` | `0x000F70B4-0x000F70F7` | `0x44` | Clears the paralysis status bit before `BattleMon_Set` when the target is Electric-type. |
+| Modern burn helper | `0x020F3168-0x020F318B` | `0x000F7168-0x000F718B` | `0x24` | Runs the original burn damage-reduction check, but skips the halving when the move is Facade. |
+| Modern sleep helper | `0x020F321C-0x020F325B` | `0x000F721C-0x000F725B` | `0x40` | Handles clamped sleep decrement and the second-turn wake roll. |
+| Modern confusion helper | `0x020F3260-0x020F3277` | `0x000F7260-0x000F7277` | `0x18` | Calls the battle RNG and returns whether confusion should self-hit under the new one-third odds. |
+| Modern snow Defense helper | `0x020F32D0-0x020F32FB` preferred | `0x000F72D0-0x000F72FB` preferred | `0x2C` | Applies the Ice-type physical Defense boost before returning to the damage routine; can fallback to another nearby zero-filled ARM9 cave. |
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
@@ -72,18 +89,29 @@ Observed overlay bases:
 
 | Overlay | Loaded RAM base | pkaizo ROM file range | Notes |
 | --- | --- | --- | --- |
+| Overlay 5 | `0x021D0040` | `0x00151A00-0x001631DF` | Overworld field routines. |
 | Overlay 6 | `0x0223E140` | `0x00182A00-0x0018E1FF` | Wild encounter-related routines. |
 | Overlay 16 | `0x0223B140` | `0x001DC600-0x0021209F` | Battle code and battle type-effectiveness logic. |
 | Overlay 21 | `0x021D0D80` | `0x0026BE00-0x00284FFF` | Pokedex display code. |
 
 | Patch | Overlay | Relative range | Loaded RAM range | pkaizo ROM file range | Size | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| Remove overworld poison | 5 | `0x1BA4-0x1BBB` | `0x021D1BE4-0x021D1BFB` | `0x001531A4-0x001531BB` | `0x18` | Skips the step-based poison damage/check sequence in the overworld. |
 | Wild nature filter | 6 | `0x39A4-0x39FF` | `0x02241AE4-0x02241B3F` | `0x001863A4-0x001863FF` | `0x5C` | Replaces the wild nature generation routine with the allowed-nature table patch. |
 | Critical hit odds table | 16 | `0x33A60-0x33A64` clean, `0x33A7C-0x33A80` pkaizo | `0x0226EBA0-0x0226EBA4` clean, `0x0226EBBC-0x0226EBC0` pkaizo | `0x0021007C-0x00210080` pkaizo | `0x5` | Edits only the base divisor byte; the rest of the stage divisor table remains `08 04 03 02`. |
 | No critical hits | 16 | `0x1FDA4-0x1FDA7` clean, `0x1FDC0-0x1FDC3` pkaizo | `0x0225AEE4-0x0225AEE7` clean, `0x0225AF00-0x0225AF03` pkaizo | `0x001FC3C0-0x001FC3C3` pkaizo | `0x4` | Writes a return stub in the critical-hit multiplier function. Offset follows the crit-rate table fallback shift. |
 | Critical damage 1.5x normal hook | 16 | `0x62B8-0x62C3` | `0x022413F8-0x02241403` | `0x001E28B8-0x001E28C3` | `0xC` | Replaces the normal damage critical multiplier with a branch to the overlay helper. |
 | Critical damage 1.5x Beat Up hook | 16 | `0xAD5A-0xAD65` | `0x02245E9A-0x02245EA5` | `0x001E735A-0x001E7365` | `0xC` | Replaces Beat Up's separate critical multiplier with the same helper. |
 | Critical damage 1.5x helper | 16 | `0x34CA0-0x34CBB` preferred | `0x0226FDE0-0x0226FDFB` preferred | `0x002112A0-0x002112BB` preferred | `0x1C` | Preferred `0xFF` overlay code cave; can fallback to another free `0xFF` fill run. |
+| Modern paralysis chance | 16 | `0x13B4E-0x13B59` | `0x0224EC8E-0x0224EC99` | `0x001F014E-0x001F0159` | `0xC` | Changes the full-paralysis roll from modulo 4 to modulo 8. |
+| Modern paralysis Speed divisor, battler 1 | 16 | `0x17FCA-0x17FCB` clean, `0x17FD2-0x17FD3` pkaizo | `0x0225310A-0x0225310B` clean, `0x02253112-0x02253113` pkaizo | `0x001F45D2-0x001F45D3` pkaizo | `0x2` | Changes the paralysis Speed penalty from divide-by-4 to divide-by-2. |
+| Modern paralysis Speed divisor, battler 2 | 16 | `0x18176-0x18177` clean, `0x1817E-0x1817F` pkaizo | `0x022532B6-0x022532B7` clean, `0x022532BE-0x022532BF` pkaizo | `0x001F477E-0x001F477F` pkaizo | `0x2` | Same Speed penalty change for the second battler in the speed comparison routine. |
+| Modern paralysis status hook | 16 | `0x79E2-0x79E5` | `0x02242B22-0x02242B25` | `0x001E3FE2-0x001E3FE5` | `0x4` | Redirects the battle-script status write to the ARM9 helper listed above. |
+| Modern burn Facade hook | 16 | `0x1FAF2-0x1FB07` clean, `0x1FB0E-0x1FB23` pkaizo | `0x0225AC32-0x0225AC47` clean, `0x0225AC4E-0x0225AC63` pkaizo | `0x001FCB0E-0x001FCB23` pkaizo | `0x16` | Replaces the burn damage-halving block with a branch to the ARM9 helper listed above. |
+| Modern sleep counter hook | 16 | `0x13A62-0x13A77` | `0x0224EBA2-0x0224EBB7` | `0x001F0062-0x001F0077` | `0x16` | Branches the sleep counter decrement to the ARM9 helper listed above. |
+| Modern confusion self-hit hook | 16 | `0x13A7E-0x13A87` | `0x0224EBBE-0x0224EBC7` | `0x001F007E-0x001F0087` | `0xA` | Replaces the vanilla 50% confusion self-hit check with a branch to the ARM9 helper listed above. |
+| Modern snow hail chip removal | 16 | `0xA1EC-0xA205` | `0x0224532C-0x02245345` | `0x001E67EC-0x001E6805` | `0x1A` | Changes the Snow Cloak skip branch into an unconditional skip so Hail/Snow no longer deals end-of-turn chip damage; Ice Body healing remains. |
+| Modern snow Defense hook | 16 | `0x1F9D2-0x1F9D5` clean, `0x1F9EE-0x1F9F1` pkaizo | `0x0225AB12-0x0225AB15` clean, `0x0225AB2E-0x0225AB31` pkaizo | `0x001FBFEE-0x001FBFF1` pkaizo | `0x4` | Branches to the ARM9 helper inside the existing weather-not-suppressed block. |
 | Force fast text / Experimental text speed | 16 | `0x3CB0-0x3CD7` | `0x0223EDF0-0x0223EE17` | `0x001E02B0-0x001E02D7` | `0x28` | Battle text-speed helper. Experimental text speed also uses the ARM9 hook/helper listed above. |
 | Fairy type table | 16 | `0x33B94-0x33CE2` | `0x0226ECD4-0x0226EE22` | `0x00210194-0x002102E2` | `0x14F` | Compressed type-effectiveness table and Fairy relationships. |
 | Fairy read hook 1 | 16 | `0x1A01A-0x1A025` clean, `0x1A022-0x1A02D` pkaizo | `0x0225515A-0x02255165` clean, `0x02255162-0x0225516D` pkaizo | `0x001F6622-0x001F662D` pkaizo | `0xC` | Redirects type-effectiveness reads to the ARM9 Fairy helper. |
@@ -96,5 +124,9 @@ Observed overlay bases:
 | Fairy Pokedex type display | 21 | `0xE408-0xE477` | `0x021DF188-0x021DF1F7` | `0x0027A208-0x0027A277` | `0x70` | Pokedex type icon routing for type `0x09`. |
 
 The Fairy Patch also modifies NARC assets outside overlays: `battle/graphic/pl_batt_obj.narc` members `74` and `236`, and `resource/eng/zukan/zukan.narc` members `88`, `89`, and `90`. Optional Fairy Pokemon type updates modify only bytes `6` and `7` of selected entries in `poketool/personal/pl_personal.narc`.
+
+Modern sleep also edits the battle script byte sequence for `subscript_fall_asleep`, changing `Random 3, 2` to `Random 1, 3` before `BATTLEMON_STATUS` is updated. Observed ROM offsets are `0x008BDC08` in pkaizo and `0x03960E00` in clean US Platinum.
+
+Modern burn also edits the battle script byte sequence for `subscript_burn_damage`, changing `DivideVarByValue BTLVAR_HP_CALC_TEMP, 8` to `DivideVarByValue BTLVAR_HP_CALC_TEMP, 16`. Observed divisor offsets are `0x008BEDC4` in pkaizo and `0x03961FBC` in clean US Platinum.
 
 Fairy type research credit: Mikelan98 and BagBoy, "Fairy Type in Pokemon Platinum" (`pokehacking.com/r/20071800`).

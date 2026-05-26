@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=25" />
+    <link rel="stylesheet" href="./styles.css?v=32" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v25</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v32</div>
       </section>
 
       <section class="panel upload-panel">
@@ -33,162 +33,226 @@
           </label>
         </div>
 
-        <div class="patch-grid" id="patchGrid">
-          <div class="patch-card patch-card-config">
-            <input id="fairyTypePatch" type="checkbox" value="fairyType" />
-            <div class="patch-body">
-              <label class="patch-title" for="fairyTypePatch">
-                <strong>Fairy Patch</strong>
-                <small>Replaces the ??? slot with Fairy battle logic and visual assets.</small>
+        <div class="patch-sections" id="patchGrid">
+          <section class="patch-section" aria-labelledby="battleMechanicsHeading">
+            <div class="patch-section-heading">
+              <h3 id="battleMechanicsHeading">Battle Mechanics</h3>
+            </div>
+
+            <div class="patch-grid">
+              <div class="patch-card patch-card-config">
+                <input id="fairyTypePatch" type="checkbox" value="fairyType" />
+                <div class="patch-body">
+                  <label class="patch-title" for="fairyTypePatch">
+                    <strong>Fairy Patch</strong>
+                    <small>Replaces the ??? slot with Fairy battle logic and visual assets.</small>
+                  </label>
+                  <label class="nested-toggle" for="fairyPokemonTypesPatch">
+                    <input id="fairyPokemonTypesPatch" type="checkbox" value="fairyPokemonTypes" />
+                    <span>Update Pokemon Types</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config">
+                <input id="shinyOddsPatch" type="checkbox" value="shinyOdds" />
+                <div class="patch-body">
+                  <label class="patch-title" for="shinyOddsPatch">
+                    <strong>Shiny odds</strong>
+                    <small>Changes the global shiny odds from 0% to 100%.</small>
+                  </label>
+                  <div class="range-control">
+                    <label for="shinyOddsPercent">
+                      <span>Odds</span>
+                      <output id="shinyOddsValue" for="shinyOddsPercent">1% - 655/65536</output>
+                    </label>
+                    <input id="shinyOddsPercent" type="range" min="0" max="100" step="1" value="1" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config">
+                <input id="critOddsPatch" type="checkbox" value="critOdds" />
+                <div class="patch-body">
+                  <label class="patch-title" for="critOddsPatch">
+                    <strong>Critical hit odds</strong>
+                    <small>Changes the base critical-hit chance divisor.</small>
+                  </label>
+                  <div class="range-control">
+                    <label for="critBaseDivisor">
+                      <span>Base divisor</span>
+                      <output id="critOddsValue" for="critBaseDivisor">1/24 base</output>
+                    </label>
+                    <input id="critBaseDivisor" type="range" min="1" max="255" step="1" value="24" />
+                  </div>
+                </div>
+              </div>
+
+              <label class="patch-card">
+                <input type="checkbox" value="critDamage" />
+                <span>
+                  <strong>Critical damage 1.5x</strong>
+                  <small>Normal crits deal 1.5x damage; Sniper crits scale to 2.25x.</small>
+                </span>
               </label>
-              <label class="nested-toggle" for="fairyPokemonTypesPatch">
-                <input id="fairyPokemonTypesPatch" type="checkbox" value="fairyPokemonTypes" />
-                <span>Update Pokemon Types</span>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernParalysis" />
+                <span>
+                  <strong>Modern paralysis</strong>
+                  <small>Electric types cannot be paralyzed; turn loss is 12.5%; Speed is halved.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernBurn" />
+                <span>
+                  <strong>Modern burn</strong>
+                  <small>Facade ignores burn's physical damage reduction; burn chip is 1/16 max HP.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernSleep" />
+                <span>
+                  <strong>Modern sleep</strong>
+                  <small>Sleep lasts at most two turns, with a 33% wake chance on turn two.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernConfusion" />
+                <span>
+                  <strong>Modern confusion</strong>
+                  <small>Confused Pokemon hit themselves about one-third of the time.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernSnow" />
+                <span>
+                  <strong>Modern snow</strong>
+                  <small>Hail no longer deals chip damage; Ice types get the Snow Defense boost.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="noCrits" />
+                <span>
+                  <strong>No critical hits</strong>
+                  <small>Forces the critical-hit multiplier routine to return non-critical.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="playerAccuracy" />
+                <span>
+                  <strong>Player accuracy bypass</strong>
+                  <small>Player-side moves bypass standard accuracy misses.</small>
+                </span>
               </label>
             </div>
-          </div>
+          </section>
 
-          <div class="patch-card patch-card-config">
-            <input id="frameRatePatch" type="checkbox" value="frameRate" />
-            <div class="patch-body">
-              <label class="patch-title" for="frameRatePatch">
-                <strong>Unlock framerate</strong>
-                <small>Skips the extra VBlank wait used by slower game contexts. Experimental.</small>
-              </label>
-              <div class="radio-row" role="radiogroup" aria-label="Framerate unlock mode">
-                <label>
-                  <input type="radio" name="frameRateMode" value="battle" checked />
-                  <span>Battle only</span>
-                </label>
-                <label>
-                  <input type="radio" name="frameRateMode" value="global" />
-                  <span>Global</span>
-                </label>
-              </div>
+          <section class="patch-section" aria-labelledby="qolHeading">
+            <div class="patch-section-heading">
+              <h3 id="qolHeading">QoL</h3>
             </div>
-          </div>
 
-          <div class="patch-card patch-card-config">
-            <input id="shinyOddsPatch" type="checkbox" value="shinyOdds" />
-            <div class="patch-body">
-              <label class="patch-title" for="shinyOddsPatch">
-                <strong>Shiny odds</strong>
-                <small>Changes the global shiny odds from 0% to 100%.</small>
+            <div class="patch-grid">
+              <div class="patch-card patch-card-config">
+                <input id="text4xPatch" type="checkbox" value="text4x" />
+                <div class="patch-body">
+                  <label class="patch-title" for="text4xPatch">
+                    <strong>Experimental text speed</strong>
+                    <small>Prints multiple normal characters per frame. Experimental; may have text timing quirks.</small>
+                  </label>
+                  <div class="range-control">
+                    <label for="textCharsPerFrame">
+                      <span>Chars per frame</span>
+                      <output id="textCharsPerFrameValue" for="textCharsPerFrame">4x</output>
+                    </label>
+                    <input id="textCharsPerFrame" type="range" min="2" max="10" step="1" value="4" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config">
+                <input id="ivRangePatch" type="checkbox" value="iv15_31" />
+                <div class="patch-body">
+                  <label class="patch-title" for="ivRangePatch">
+                    <strong>Random IV range</strong>
+                    <small>Rerolls each random IV until it lands inside the selected range.</small>
+                  </label>
+                  <div class="range-control">
+                    <label for="ivMin">
+                      <span>Minimum</span>
+                      <output id="ivMinValue" for="ivMin">15</output>
+                    </label>
+                    <input id="ivMin" type="range" min="0" max="31" step="1" value="15" />
+                  </div>
+                  <div class="range-control">
+                    <label for="ivMax">
+                      <span>Maximum</span>
+                      <output id="ivMaxValue" for="ivMax">31</output>
+                    </label>
+                    <input id="ivMax" type="range" min="0" max="31" step="1" value="31" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config">
+                <input id="wildNaturesPatch" type="checkbox" value="wildNatures" />
+                <div class="patch-body">
+                  <label class="patch-title" for="wildNaturesPatch">
+                    <strong>Filter wild natures</strong>
+                    <small>Only selected natures can be randomly generated for wild Pokemon.</small>
+                  </label>
+                  <div class="nature-heading">
+                    <span>Allowed natures</span>
+                    <output id="natureCountValue">25 allowed</output>
+                  </div>
+                  <div class="nature-grid" id="natureGrid"></div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config">
+                <input id="frameRatePatch" type="checkbox" value="frameRate" />
+                <div class="patch-body">
+                  <label class="patch-title" for="frameRatePatch">
+                    <strong>Unlock framerate</strong>
+                    <small>Skips the extra VBlank wait used by slower game contexts. Experimental.</small>
+                  </label>
+                  <div class="radio-row" role="radiogroup" aria-label="Framerate unlock mode">
+                    <label>
+                      <input type="radio" name="frameRateMode" value="battle" checked />
+                      <span>Battle only</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="frameRateMode" value="global" />
+                      <span>Global</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <label class="patch-card">
+                <input type="checkbox" value="movementSpeed" />
+                <span>
+                  <strong>Faster movement</strong>
+                  <small>Bumps walk/run/cycling movement actions up to faster tiers.</small>
+                </span>
               </label>
-              <div class="range-control">
-                <label for="shinyOddsPercent">
-                  <span>Odds</span>
-                  <output id="shinyOddsValue" for="shinyOddsPercent">1% - 655/65536</output>
-                </label>
-                <input id="shinyOddsPercent" type="range" min="0" max="100" step="1" value="1" />
-              </div>
-            </div>
-          </div>
 
-          <div class="patch-card patch-card-config">
-            <input id="critOddsPatch" type="checkbox" value="critOdds" />
-            <div class="patch-body">
-              <label class="patch-title" for="critOddsPatch">
-                <strong>Critical hit odds</strong>
-                <small>Changes the base critical-hit chance divisor.</small>
+              <label class="patch-card">
+                <input type="checkbox" value="noOverworldPoison" />
+                <span>
+                  <strong>Remove overworld poison</strong>
+                  <small>Poisoned party Pokemon no longer take damage from walking.</small>
+                </span>
               </label>
-              <div class="range-control">
-                <label for="critBaseDivisor">
-                  <span>Base divisor</span>
-                  <output id="critOddsValue" for="critBaseDivisor">1/24 base</output>
-                </label>
-                <input id="critBaseDivisor" type="range" min="1" max="255" step="1" value="24" />
-              </div>
             </div>
-          </div>
-
-          <label class="patch-card">
-            <input type="checkbox" value="critDamage" />
-            <span>
-              <strong>Critical damage 1.5x</strong>
-              <small>Normal crits deal 1.5x damage; Sniper crits scale to 2.25x.</small>
-            </span>
-          </label>
-
-          <div class="patch-card patch-card-config">
-            <input id="text4xPatch" type="checkbox" value="text4x" />
-            <div class="patch-body">
-              <label class="patch-title" for="text4xPatch">
-                <strong>Experimental text speed</strong>
-                <small>Prints multiple normal characters per frame. Experimental; may have text timing quirks.</small>
-              </label>
-              <div class="range-control">
-                <label for="textCharsPerFrame">
-                  <span>Chars per frame</span>
-                  <output id="textCharsPerFrameValue" for="textCharsPerFrame">4x</output>
-                </label>
-                <input id="textCharsPerFrame" type="range" min="2" max="10" step="1" value="4" />
-              </div>
-            </div>
-          </div>
-
-          <label class="patch-card">
-            <input type="checkbox" value="noCrits" />
-            <span>
-              <strong>No critical hits</strong>
-              <small>Forces the critical-hit multiplier routine to return non-critical.</small>
-            </span>
-          </label>
-
-          <div class="patch-card patch-card-config">
-            <input id="ivRangePatch" type="checkbox" value="iv15_31" />
-            <div class="patch-body">
-              <label class="patch-title" for="ivRangePatch">
-                <strong>Random IV range</strong>
-                <small>Rerolls each random IV until it lands inside the selected range.</small>
-              </label>
-              <div class="range-control">
-                <label for="ivMin">
-                  <span>Minimum</span>
-                  <output id="ivMinValue" for="ivMin">15</output>
-                </label>
-                <input id="ivMin" type="range" min="0" max="31" step="1" value="15" />
-              </div>
-              <div class="range-control">
-                <label for="ivMax">
-                  <span>Maximum</span>
-                  <output id="ivMaxValue" for="ivMax">31</output>
-                </label>
-                <input id="ivMax" type="range" min="0" max="31" step="1" value="31" />
-              </div>
-            </div>
-          </div>
-
-          <div class="patch-card patch-card-config">
-            <input id="wildNaturesPatch" type="checkbox" value="wildNatures" />
-            <div class="patch-body">
-              <label class="patch-title" for="wildNaturesPatch">
-                <strong>Filter wild natures</strong>
-                <small>Only selected natures can be randomly generated for wild Pokemon.</small>
-              </label>
-              <div class="nature-heading">
-                <span>Allowed natures</span>
-                <output id="natureCountValue">25 allowed</output>
-              </div>
-              <div class="nature-grid" id="natureGrid"></div>
-            </div>
-          </div>
-
-          <label class="patch-card">
-            <input type="checkbox" value="movementSpeed" />
-            <span>
-              <strong>Faster movement</strong>
-              <small>Bumps walk/run/cycling movement actions up to faster tiers.</small>
-            </span>
-          </label>
-
-          <label class="patch-card">
-            <input type="checkbox" value="playerAccuracy" />
-            <span>
-              <strong>Player accuracy bypass</strong>
-              <small>Player-side moves bypass standard accuracy misses.</small>
-            </span>
-          </label>
+          </section>
         </div>
       </section>
 
@@ -226,6 +290,6 @@
       </dialog>
     </main>
 
-    <script src="./app.js?v=25"></script>
+    <script src="./app.js?v=32"></script>
   </body>
 </html>

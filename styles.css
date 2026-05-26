@@ -143,6 +143,38 @@ input[type="file"] {
   white-space: nowrap;
 }
 
+.patch-sections {
+  display: grid;
+  gap: 18px;
+}
+
+.patch-section {
+  display: grid;
+  gap: 10px;
+}
+
+.patch-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.patch-section:first-child .patch-section-heading {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.patch-section-heading h3 {
+  margin: 0;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .patch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

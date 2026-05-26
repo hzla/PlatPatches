@@ -14,16 +14,22 @@
     critOdds: "Critical hit odds",
     critDamage: "Critical damage 1.5x",
     noCrits: "No critical hits",
+    modernParalysis: "Modern paralysis",
+    modernBurn: "Modern burn",
+    modernSleep: "Modern sleep",
+    modernConfusion: "Modern confusion",
+    modernSnow: "Modern snow",
     iv15_31: "Random IV range",
     wildNatures: "Filter wild natures",
     movementSpeed: "Faster movement",
+    noOverworldPoison: "Remove overworld poison",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
     instantText: "Force fast text",
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v25";
+  const APP_VERSION = "v32";
   const PATCH_INFO = {
     fairyType: {
       title: "Fairy Patch",
@@ -97,6 +103,60 @@
         "Uses the critical-rate table as a nearby locator, so it tolerates the pkaizo +0x1C shift.",
       ],
     },
+    modernParalysis: {
+      title: "Modern paralysis",
+      summary:
+        "Updates paralysis closer to newer games: Electric-type Pokemon cannot be paralyzed, a paralyzed Pokemon only loses its turn 12.5% of the time, and paralysis cuts Speed in half instead of quartering it.",
+      regions: [
+        "Overlay 16 full-paralysis chance: +0x13B4E-0x13B59.",
+        "Overlay 16 Speed-order paralysis divisors: +0x17FCA clean / +0x17FD2 pkaizo, and +0x18176 clean / +0x1817E pkaizo.",
+        "Overlay 16 status-set hook: +0x79E2-0x79E5.",
+        "ARM9 helper: RAM 0x020F30B4-0x020F30F7 / ROM 0x000F70B4-0x000F70F7.",
+      ],
+    },
+    modernBurn: {
+      title: "Modern burn",
+      summary:
+        "Keeps Facade at full physical damage when the user is burned, and lowers burn's end-of-turn chip damage from 1/8 max HP to 1/16. Facade still gets its normal status boost.",
+      regions: [
+        "Overlay 16 burn damage-reduction hook: +0x1FAF2 clean / +0x1FB0E pkaizo.",
+        "Battle script burn residual damage: changes the burn-damage subscript divisor from 8 to 16. Observed divisor offsets are 0x008BEDC4 pkaizo and 0x03961FBC clean.",
+        "ARM9 helper: RAM 0x020F3168-0x020F318B / ROM 0x000F7168-0x000F718B.",
+        "The helper checks burn, Guts, and move ID 0x0107 before deciding whether to halve physical damage.",
+      ],
+    },
+    modernSleep: {
+      title: "Modern sleep",
+      summary:
+        "Shortens battle sleep to modern timing. The first asleep turn is guaranteed, the second turn has a one-in-three wake chance, and the third turn always wakes.",
+      regions: [
+        "Battle script sleep duration: changes the sleep-status Random command from 3,2 to 1,3 before BATTLEMON_STATUS is updated.",
+        "Overlay 16 sleep counter hook: +0x13A62-0x13A77.",
+        "ARM9 helper: RAM 0x020F321C-0x020F325B / ROM 0x000F721C-0x000F725B.",
+        "The helper clamps older longer sleep counters, decrements once per action attempt, and rolls the 33% second-turn wake chance.",
+      ],
+    },
+    modernConfusion: {
+      title: "Modern confusion",
+      summary:
+        "Reduces confusion self-hit odds from a coin flip to about one in three. Confusion duration and snap-out behavior are unchanged.",
+      regions: [
+        "Overlay 16 confusion self-hit hook: +0x13A7E-0x13A87.",
+        "ARM9 helper: RAM 0x020F3260-0x020F3277 / ROM 0x000F7260-0x000F7277.",
+        "The helper calls the normal battle RNG and compares against a one-third threshold before returning to the original branch.",
+      ],
+    },
+    modernSnow: {
+      title: "Modern snow",
+      summary:
+        "Turns Platinum's existing Hail weather into Snow mechanically. Hail no longer chips HP at the end of the turn, Ice Body still heals, and Ice-type Pokemon take physical hits as if their Defense were 50% higher. The move and weather text still says Hail in this MVP.",
+      regions: [
+        "Overlay 16 hail chip branch: +0xA1EC-0xA205.",
+        "Overlay 16 Snow Defense hook: +0x1F9D2 clean / +0x1F9EE pkaizo.",
+        "ARM9 helper: RAM 0x020F32D0-0x020F32FB / ROM 0x000F72D0-0x000F72FB preferred; can fallback to another nearby zero-filled cave.",
+        "The helper runs inside Platinum's existing weather-not-suppressed block, so Cloud Nine and Air Lock still suppress the Defense boost.",
+      ],
+    },
     iv15_31: {
       title: "Random IV range",
       summary:
@@ -122,6 +182,15 @@
         "May also repair older pointer-table edits around ARM9 RAM 0x020EF194-0x020EF53C if it sees the previous patcher version.",
       ],
     },
+    noOverworldPoison: {
+      title: "Remove overworld poison",
+      summary:
+        "Stops poisoned party Pokemon from taking step-based damage while walking around. Battle poison damage is unchanged.",
+      regions: [
+        "Overlay 5 overworld poison routine: +0x1BA4-0x1BBB.",
+        "The patch skips the post-step poison damage/check sequence after the normal party scan has run.",
+      ],
+    },
     playerAccuracy: {
       title: "Player accuracy bypass",
       summary:
@@ -136,6 +205,7 @@
     debugFairyBattleTest: false,
   };
 
+  const OVERLAY_5 = 5;
   const OVERLAY_6 = 6;
   const OVERLAY_16 = 16;
   const OVERLAY_21 = 21;
@@ -338,6 +408,24 @@
     }
 
     return { offset: preferredOffset, usedFallback: false };
+  }
+
+  function locateUniquePatch(data, expected, alreadyPatched, label) {
+    const expectedHits = findNeedle(data, expected, 0, data.length);
+    const patchedHits = findNeedle(data, alreadyPatched, 0, data.length);
+
+    if (expectedHits.length === 1 && patchedHits.length === 0) {
+      return { offset: expectedHits[0], state: "patch" };
+    }
+    if (expectedHits.length === 0 && patchedHits.length === 1) {
+      return { offset: patchedHits[0], state: "already" };
+    }
+    if (expectedHits.length === 0 && patchedHits.length === 0) {
+      throw new PatchError(`${label} could not be located.`);
+    }
+    throw new PatchError(
+      `${label} matched multiple locations: ${[...expectedHits, ...patchedHits].map(hex).join(", ")}.`
+    );
   }
 
   function getFatInfo(rom) {
@@ -2309,6 +2397,48 @@
     log.push(`Faster movement: ${parts.join("; ")}.`);
   }
 
+  const OVERWORLD_POISON_REL = 0x1ba4;
+  const OVERWORLD_POISON_ORIGINAL = bytesFromHex(`
+    28 1C 05 21 01 22 17 F0 F3 FE 28 1C 00 F0 30 F9
+    01 28 01 D1 01 20 F8 BD
+  `);
+  const OVERWORLD_POISON_PATCHED = bytesFromHex(`
+    28 1C 05 21 01 22 17 F0 F3 FE 05 E0 C0 46 C0 46
+    C0 46 C0 46 C0 46 C0 46
+  `);
+
+  function patchNoOverworldPoison(rom, force, log) {
+    const preferred = overlayOffset(rom, OVERLAY_5, OVERWORLD_POISON_REL, OVERWORLD_POISON_ORIGINAL.length);
+    const located = locateNearby(
+      rom,
+      preferred.offset,
+      OVERWORLD_POISON_ORIGINAL,
+      OVERWORLD_POISON_PATCHED,
+      0x100,
+      "Remove overworld poison"
+    );
+    const state = requireBytes(
+      rom,
+      located.offset,
+      OVERWORLD_POISON_ORIGINAL,
+      OVERWORLD_POISON_PATCHED,
+      force,
+      "Remove overworld poison"
+    );
+
+    if (state === "already") {
+      log.push("Remove overworld poison: already patched.");
+      return;
+    }
+
+    writeBytes(rom, located.offset, OVERWORLD_POISON_PATCHED);
+    log.push(
+      `Remove overworld poison: disabled step-based poison damage at overlay 5+${hex(
+        located.offset - preferred.overlay.start
+      )}${located.usedFallback ? " (fallback scan)" : ""}.`
+    );
+  }
+
   function patchInstantText(rom, force, log) {
     const stub = bytesFromHex("01 20 70 47");
 
@@ -3063,6 +3193,775 @@
     );
   }
 
+  const MODERN_PARALYSIS_CHANCE_REL = 0x13b4e;
+  const MODERN_PARALYSIS_CHANCE_ORIGINAL = bytesFromHex("c1 0f 82 07 52 1a 1e 20 c2 41 88 18");
+  const MODERN_PARALYSIS_CHANCE_PATCHED = bytesFromHex("c1 0f 42 07 52 1a 1d 20 c2 41 88 18");
+  const MODERN_PARALYSIS_SPEED_SITES = [
+    {
+      label: "battler 1 Speed divisor",
+      rel: 0x17fd2,
+      original: bytesFromHex(`
+        06 98 29 18 37 48 09 58 40 20 08 42 00 d0 b6 08
+        0b 98 70 28 0a d1 06 99 15 20 6a 18 32 49 00 01
+      `),
+      patched: bytesFromHex(`
+        06 98 29 18 37 48 09 58 40 20 08 42 00 d0 76 08
+        0b 98 70 28 0a d1 06 99 15 20 6a 18 32 49 00 01
+      `),
+    },
+    {
+      label: "battler 2 Speed divisor",
+      rel: 0x1817e,
+      original: bytesFromHex(`
+        05 98 29 18 92 48 09 58 40 20 08 42 00 d0 a4 08
+        0a 98 70 28 0a d1 05 99 15 20 6a 18 8d 49 00 01
+      `),
+      patched: bytesFromHex(`
+        05 98 29 18 92 48 09 58 40 20 08 42 00 d0 64 08
+        0a 98 70 28 0a d1 05 99 15 20 6a 18 8d 49 00 01
+      `),
+    },
+  ];
+  const MODERN_PARALYSIS_HOOK_REL = 0x79e2;
+  const MODERN_PARALYSIS_HOOK_ORIGINALS = [
+    bytesFromHex("0f f0 65 fc"),
+    bytesFromHex("0f f0 61 fc"),
+  ];
+  const MODERN_PARALYSIS_HELPER_RAM = 0x020f30b4;
+  const BATTLE_MON_SET_RAM = 0x022523f0;
+
+  function buildModernParalysisHelper(helperAddress) {
+    const helper = bytesFromHex(`
+      f0 b5 04 1c 0d 1c 16 1c 1f 1c 34 2e 11 d1
+      38 68 40 21 08 42 0d d0 c0 22 6a 43 09 4b
+      a2 18 d0 5c 0d 28 03 d0 01 33 d0 5c 0d 28
+      02 d1 38 68 88 43 38 60 20 1c 29 1c 32 1c
+      3b 1c 00 00 00 00 f0 bd 64 2d 00 00
+    `);
+    helper.set(thumbBl(helperAddress + 0x3a, BATTLE_MON_SET_RAM), 0x3a);
+    return helper;
+  }
+
+  function modernParalysisHook(fromAddress, helperAddress) {
+    return new Uint8Array(thumbBl(fromAddress, helperAddress));
+  }
+
+  function bytesEqualAny(data, offset, expectedList) {
+    return expectedList.some((expected) => bytesEqual(data, offset, expected));
+  }
+
+  function findModernParalysisHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_PARALYSIS_HOOK_REL;
+    const preferredHook = modernParalysisHook(
+      overlay.loadAddress + MODERN_PARALYSIS_HOOK_REL,
+      helperAddress
+    );
+    if (bytesEqualAny(rom, preferred, MODERN_PARALYSIS_HOOK_ORIGINALS) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - 4; offset += 2) {
+      const hookBytes = modernParalysisHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
+      if (bytesEqualAny(rom, offset, MODERN_PARALYSIS_HOOK_ORIGINALS) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern paralysis status hook fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function patchModernParalysis(rom, force, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const chancePreferred = overlay.start + MODERN_PARALYSIS_CHANCE_REL;
+    const chanceLocated = locateNearby(
+      rom,
+      chancePreferred,
+      MODERN_PARALYSIS_CHANCE_ORIGINAL,
+      MODERN_PARALYSIS_CHANCE_PATCHED,
+      0x100,
+      "Modern paralysis chance"
+    );
+    const chanceState = requireBytes(
+      rom,
+      chanceLocated.offset,
+      MODERN_PARALYSIS_CHANCE_ORIGINAL,
+      MODERN_PARALYSIS_CHANCE_PATCHED,
+      force,
+      "Modern paralysis chance"
+    );
+
+    const speedSites = MODERN_PARALYSIS_SPEED_SITES.map((site) => {
+      const located = locateNearby(
+        rom,
+        overlay.start + site.rel - 0xe,
+        site.original,
+        site.patched,
+        0x100,
+        `Modern paralysis ${site.label}`
+      );
+      const state = requireBytes(
+        rom,
+        located.offset,
+        site.original,
+        site.patched,
+        force,
+        `Modern paralysis ${site.label}`
+      );
+      return { ...site, ...located, state };
+    });
+
+    const helper = buildModernParalysisHelper(MODERN_PARALYSIS_HELPER_RAM);
+    const helperAt = arm9Offset(rom, MODERN_PARALYSIS_HELPER_RAM, helper.length);
+    const helperExpected = new Uint8Array(helper.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      helper,
+      force,
+      "Modern paralysis Electric immunity helper"
+    );
+
+    const hookLocated = findModernParalysisHook(rom, overlay, MODERN_PARALYSIS_HELPER_RAM);
+    const hookState =
+      bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes)
+        ? "already"
+        : bytesEqualAny(rom, hookLocated.offset, MODERN_PARALYSIS_HOOK_ORIGINALS) || force
+          ? "patch"
+          : null;
+    if (hookState == null) {
+      const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + 4))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern paralysis status hook sanity check failed at overlay 16+${hex(
+          hookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (chanceState !== "already") {
+      writeBytes(rom, chanceLocated.offset, MODERN_PARALYSIS_CHANCE_PATCHED);
+    }
+    for (const site of speedSites) {
+      if (site.state !== "already") {
+        writeBytes(rom, site.offset, site.patched);
+      }
+    }
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, helper);
+    }
+    if (hookState !== "already") {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+
+    if (
+      chanceState === "already" &&
+      speedSites.every((site) => site.state === "already") &&
+      helperState === "already" &&
+      hookState === "already"
+    ) {
+      log.push("Modern paralysis: already patched.");
+      return;
+    }
+
+    const notes = [];
+    if (chanceLocated.usedFallback) {
+      notes.push("chance fallback scan");
+    }
+    if (hookLocated.usedFallback) {
+      notes.push("status hook fallback scan");
+    }
+    if (speedSites.some((site) => site.usedFallback)) {
+      notes.push("Speed divisor fallback scan");
+    }
+    log.push(
+      `Modern paralysis: full-paralysis chance is 12.5% at overlay 16+${hex(
+        chanceLocated.offset - overlay.start
+      )}; paralysis Speed reduction is 50% at overlay 16+${speedSites
+        .map((site) => hex(site.offset - overlay.start + 0xe))
+        .join(" and +")}; Electric-type immunity hook at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; helper at ARM9 RAM ${hex(MODERN_PARALYSIS_HELPER_RAM)}${
+        notes.length ? ` (${notes.join(", ")})` : ""
+      }.`
+    );
+  }
+
+  const MODERN_BURN_HOOK_REL = 0x1fb0e;
+  const MODERN_BURN_ORIGINAL = bytesFromHex(`
+    12 98 10 21 08 42 06 d0 3e 2f 04 d0 21 98 c1 0f
+    41 18 48 10 21 90
+  `);
+  const MODERN_BURN_HELPER_RAM = 0x020f3168;
+  const MODERN_BURN_HELPER = bytesFromHex(`
+    12 98 10 21 08 42 0c d0 3e 2f 0a d0 02 98 83 21
+    49 00 01 31 88 42 04 d0 21 98 c1 0f 41 18 48 10
+    21 90 70 47
+  `);
+  const MODERN_BURN_DAMAGE_ORIGINAL = bytesFromHex(`
+    55 00 00 00 20 00 00 00 08 00 00 00 37 00 00 00
+    01 00 00 00 ff 00 00 00 55 00 00 00 03 00 00 00
+    55 00 00 00 20 00 00 00 02 00 00 00 32 00 00 00
+    0c 00 00 00 20 00 00 00 ff ff ff ff 12 00 00 00
+    5f 00 00 00 02 00 00 00 ff 00 00 00
+  `);
+  const MODERN_BURN_DAMAGE_PATCHED = bytesFromHex(`
+    55 00 00 00 20 00 00 00 10 00 00 00 37 00 00 00
+    01 00 00 00 ff 00 00 00 55 00 00 00 03 00 00 00
+    55 00 00 00 20 00 00 00 02 00 00 00 32 00 00 00
+    0c 00 00 00 20 00 00 00 ff ff ff ff 12 00 00 00
+    5f 00 00 00 02 00 00 00 ff 00 00 00
+  `);
+
+  function modernBurnHook(fromAddress, helperAddress) {
+    return padBytes(new Uint8Array(thumbBl(fromAddress, helperAddress)), MODERN_BURN_ORIGINAL.length);
+  }
+
+  function findModernBurnHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_BURN_HOOK_REL;
+    const preferredHook = modernBurnHook(overlay.loadAddress + MODERN_BURN_HOOK_REL, helperAddress);
+    if (bytesEqual(rom, preferred, MODERN_BURN_ORIGINAL) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - MODERN_BURN_ORIGINAL.length; offset += 2) {
+      const hookBytes = modernBurnHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
+      if (bytesEqual(rom, offset, MODERN_BURN_ORIGINAL) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern burn fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function patchModernBurn(rom, force, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const burnDamage = locateUniquePatch(
+      rom,
+      MODERN_BURN_DAMAGE_ORIGINAL,
+      MODERN_BURN_DAMAGE_PATCHED,
+      "Modern burn residual damage divisor"
+    );
+    const helperAt = arm9Offset(rom, MODERN_BURN_HELPER_RAM, MODERN_BURN_HELPER.length);
+    const helperExpected = new Uint8Array(MODERN_BURN_HELPER.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      MODERN_BURN_HELPER,
+      force,
+      "Modern burn Facade helper"
+    );
+
+    const hookLocated = findModernBurnHook(rom, overlay, MODERN_BURN_HELPER_RAM);
+    const hookAlready = bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes);
+    if (!hookAlready && !bytesEqual(rom, hookLocated.offset, MODERN_BURN_ORIGINAL) && !force) {
+      const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + MODERN_BURN_ORIGINAL.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern burn hook sanity check failed at overlay 16+${hex(
+          hookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, MODERN_BURN_HELPER);
+    }
+    if (!hookAlready) {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+    if (burnDamage.state !== "already") {
+      writeBytes(rom, burnDamage.offset, MODERN_BURN_DAMAGE_PATCHED);
+    }
+
+    if (helperState === "already" && hookAlready && burnDamage.state === "already") {
+      log.push("Modern burn: already patched.");
+      return;
+    }
+
+    log.push(
+      `Modern burn: Facade ignores burn damage reduction at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; burn chip damage is 1/16 at ROM ${hex(
+        burnDamage.offset + 0x8
+      )}; helper at ARM9 RAM ${hex(MODERN_BURN_HELPER_RAM)}${
+        hookLocated.usedFallback ? " (fallback scan)" : ""
+      }.`
+    );
+  }
+
+  const MODERN_SLEEP_DURATION_ORIGINAL = bytesFromHex(`
+    38 00 00 00 03 00 00 00 02 00 00 00
+    3a 00 00 00 0a 00 00 00 07 00 00 00
+    34 00 00 00 09 00 00 00
+  `);
+  const MODERN_SLEEP_DURATION_PATCHED = bytesFromHex(`
+    38 00 00 00 01 00 00 00 03 00 00 00
+    3a 00 00 00 0a 00 00 00 07 00 00 00
+    34 00 00 00 09 00 00 00
+  `);
+  const MODERN_SLEEP_HOOK_REL = 0x13a62;
+  const MODERN_SLEEP_HOOK_ORIGINAL = bytesFromHex(`
+    a6 48 10 58 41 1e a4 48 11 50 61 6e
+    c0 20 48 43 21 18 a1 48 09 58
+  `);
+  const MODERN_SLEEP_HELPER_RAM = 0x020f321c;
+  const BATTLE_SYSTEM_RAND_NEXT_RAM = 0x0223f4bc;
+
+  function buildModernSleepHelper(helperAddress) {
+    const helper = bytesFromHex(`
+      1c b5 0d 4b d4 58 07 20 20 40 03 28 00 d9 03 20
+      01 38 01 28 08 d1 0a 98 ff f7 fe ff 07 49 88 42
+      01 d2 00 20 00 e0 01 20 07 21 8c 43 04 43 00 9a
+      01 4b d4 50 21 1c 1c bd b0 2d 00 00 55 55 00 00
+    `);
+    helper.set(thumbBl(helperAddress + 0x18, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x18);
+    return helper;
+  }
+
+  function modernSleepHook(fromAddress, helperAddress) {
+    return padBytes(new Uint8Array(thumbBl(fromAddress, helperAddress)), MODERN_SLEEP_HOOK_ORIGINAL.length);
+  }
+
+  function findModernSleepHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_SLEEP_HOOK_REL;
+    const preferredHook = modernSleepHook(overlay.loadAddress + MODERN_SLEEP_HOOK_REL, helperAddress);
+    if (bytesEqual(rom, preferred, MODERN_SLEEP_HOOK_ORIGINAL) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - MODERN_SLEEP_HOOK_ORIGINAL.length; offset += 2) {
+      const hookBytes = modernSleepHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
+      if (bytesEqual(rom, offset, MODERN_SLEEP_HOOK_ORIGINAL) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern sleep fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function patchModernSleep(rom, force, log) {
+    const sleepDuration = locateUniquePatch(
+      rom,
+      MODERN_SLEEP_DURATION_ORIGINAL,
+      MODERN_SLEEP_DURATION_PATCHED,
+      "Modern sleep battle-script duration command"
+    );
+
+    const helper = buildModernSleepHelper(MODERN_SLEEP_HELPER_RAM);
+    const helperAt = arm9Offset(rom, MODERN_SLEEP_HELPER_RAM, helper.length);
+    const helperExpected = new Uint8Array(helper.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      helper,
+      force,
+      "Modern sleep wake-roll helper"
+    );
+
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const hookLocated = findModernSleepHook(rom, overlay, MODERN_SLEEP_HELPER_RAM);
+    const hookAlready = bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes);
+    if (!hookAlready && !bytesEqual(rom, hookLocated.offset, MODERN_SLEEP_HOOK_ORIGINAL) && !force) {
+      const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + MODERN_SLEEP_HOOK_ORIGINAL.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern sleep hook sanity check failed at overlay 16+${hex(
+          hookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (sleepDuration.state !== "already") {
+      writeBytes(rom, sleepDuration.offset, MODERN_SLEEP_DURATION_PATCHED);
+    }
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, helper);
+    }
+    if (!hookAlready) {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+
+    if (sleepDuration.state === "already" && helperState === "already" && hookAlready) {
+      log.push("Modern sleep: already patched.");
+      return;
+    }
+
+    log.push(
+      `Modern sleep: sleep duration script at ROM ${hex(
+        sleepDuration.offset
+      )}; sleep counter hook at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; helper at ARM9 RAM ${hex(MODERN_SLEEP_HELPER_RAM)}${
+        hookLocated.usedFallback ? " (fallback scan)" : ""
+      }.`
+    );
+  }
+
+  const MODERN_CONFUSION_HOOK_REL = 0x13a7e;
+  const MODERN_CONFUSION_HOOK_ORIGINAL = bytesFromHex(`
+    06 98 f0 f7 7c fc 01 21 08 42 09 d0
+  `);
+  const MODERN_CONFUSION_HELPER_RAM = 0x020f3260;
+
+  function buildModernConfusionHelper(helperAddress) {
+    const helper = bytesFromHex(`
+      00 b5 ff f7 fe ff 02 49 88 42 01 d2 00 20 00 bd
+      01 20 00 bd 55 55 00 00
+    `);
+    helper.set(thumbBl(helperAddress + 0x2, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x2);
+    return helper;
+  }
+
+  function modernConfusionHook(fromAddress, helperAddress) {
+    return new Uint8Array([
+      0x06,
+      0x98,
+      ...thumbBl(fromAddress + 0x2, helperAddress),
+      0x00,
+      0x28,
+      ...thumbCondBranch(fromAddress + 0x8, fromAddress + 0x20, 0),
+    ]);
+  }
+
+  function findModernConfusionHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_CONFUSION_HOOK_REL;
+    const preferredHook = modernConfusionHook(overlay.loadAddress + MODERN_CONFUSION_HOOK_REL, helperAddress);
+    if (bytesEqual(rom, preferred, MODERN_CONFUSION_HOOK_ORIGINAL) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - MODERN_CONFUSION_HOOK_ORIGINAL.length; offset += 2) {
+      const hookBytes = modernConfusionHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
+      if (bytesEqual(rom, offset, MODERN_CONFUSION_HOOK_ORIGINAL) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern confusion fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function patchModernConfusion(rom, force, log) {
+    const helper = buildModernConfusionHelper(MODERN_CONFUSION_HELPER_RAM);
+    const helperAt = arm9Offset(rom, MODERN_CONFUSION_HELPER_RAM, helper.length);
+    const helperExpected = new Uint8Array(helper.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      helper,
+      force,
+      "Modern confusion self-hit helper"
+    );
+
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const hookLocated = findModernConfusionHook(rom, overlay, MODERN_CONFUSION_HELPER_RAM);
+    const hookAlready = bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes);
+    if (!hookAlready && !bytesEqual(rom, hookLocated.offset, MODERN_CONFUSION_HOOK_ORIGINAL) && !force) {
+      const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + MODERN_CONFUSION_HOOK_ORIGINAL.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern confusion hook sanity check failed at overlay 16+${hex(
+          hookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, helper);
+    }
+    if (!hookAlready) {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+
+    if (helperState === "already" && hookAlready) {
+      log.push("Modern confusion: already patched.");
+      return;
+    }
+
+    log.push(
+      `Modern confusion: self-hit odds are about 1/3 at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; helper at ARM9 RAM ${hex(MODERN_CONFUSION_HELPER_RAM)}${
+        hookLocated.usedFallback ? " (fallback scan)" : ""
+      }.`
+    );
+  }
+
+  const MODERN_SNOW_HAIL_CHIP_REL = 0xa1ec;
+  const MODERN_SNOW_HAIL_CHIP_ORIGINAL = bytesFromHex(`
+    51 28 0e d0 43 49 08 1c 22 30 29 50 40 48 a9 19
+    09 58 00 20 c0 43 48 43 10 21
+  `);
+  const MODERN_SNOW_HAIL_CHIP_PATCHED = bytesFromHex(`
+    51 28 0e e0 43 49 08 1c 22 30 29 50 40 48 a9 19
+    09 58 00 20 c0 43 48 43 10 21
+  `);
+  const MODERN_SNOW_DEFENSE_HOOK_REL = 0x1f9ee;
+  const MODERN_SNOW_DEFENSE_SIGNATURES = [
+    bytesFromHex(`
+      07 98 00 28 12 d0 7a 20 00 90 01 98 09 9b 29 1c
+      01 22 fa f7 34 fd 00 28 08 d0 1f 99 0f 20 48 43
+    `),
+    bytesFromHex(`
+      07 98 00 28 12 d0 7a 20 00 90 01 98 09 9b 29 1c
+      01 22 fa f7 3e fd 00 28 08 d0 1f 99 0f 20 48 43
+    `),
+  ];
+  const MODERN_SNOW_HELPER_RAM = 0x020f32d0;
+  const MODERN_SNOW_HELPER_SEARCH_START_RAM = 0x020f3278;
+  const MODERN_SNOW_HELPER_SEARCH_END_RAM = 0x020f3800;
+  const MODERN_SNOW_HELPER = bytesFromHex(`
+    0e b5 2c 99 c0 22 11 42 0d d0 24 99 00 29 0a d1
+    12 99 0f 29 02 d0 11 99 0f 29 04 d1 22 99 03 22
+    51 43 49 08 22 91 0b 98 00 28 0e bd
+  `);
+
+  function modernSnowDefenseHook(fromAddress, helperAddress) {
+    return new Uint8Array(thumbBl(fromAddress, helperAddress));
+  }
+
+  function modernSnowDefensePatchedBytes(originalBytes, fromAddress, helperAddress) {
+    const patched = new Uint8Array(originalBytes);
+    patched.set(modernSnowDefenseHook(fromAddress, helperAddress), 0);
+    return patched;
+  }
+
+  function findModernSnowDefenseHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_SNOW_DEFENSE_HOOK_REL;
+    const preferredAddress = overlay.loadAddress + MODERN_SNOW_DEFENSE_HOOK_REL;
+    for (const originalBytes of MODERN_SNOW_DEFENSE_SIGNATURES) {
+      const preferredPatched = modernSnowDefensePatchedBytes(originalBytes, preferredAddress, helperAddress);
+      if (bytesEqual(rom, preferred, originalBytes) || bytesEqual(rom, preferred, preferredPatched)) {
+        return {
+          offset: preferred,
+          usedFallback: false,
+          hookBytes: modernSnowDefenseHook(preferredAddress, helperAddress),
+          originalBytes,
+          patchedBytes: preferredPatched,
+        };
+      }
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x300);
+    const end = Math.min(overlay.end, preferred + 0x300);
+    const signatureLength = MODERN_SNOW_DEFENSE_SIGNATURES[0].length;
+    for (let offset = start; offset <= end - signatureLength; offset += 2) {
+      const address = overlay.loadAddress + (offset - overlay.start);
+      for (const originalBytes of MODERN_SNOW_DEFENSE_SIGNATURES) {
+        const patchedBytes = modernSnowDefensePatchedBytes(originalBytes, address, helperAddress);
+        if (bytesEqual(rom, offset, originalBytes) || bytesEqual(rom, offset, patchedBytes)) {
+          hits.push({
+            offset,
+            hookBytes: modernSnowDefenseHook(address, helperAddress),
+            originalBytes,
+            patchedBytes,
+          });
+          break;
+        }
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern snow Defense hook fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return {
+      offset: preferred,
+      usedFallback: false,
+      hookBytes: modernSnowDefenseHook(preferredAddress, helperAddress),
+      originalBytes: MODERN_SNOW_DEFENSE_SIGNATURES[0],
+      patchedBytes: modernSnowDefensePatchedBytes(
+        MODERN_SNOW_DEFENSE_SIGNATURES[0],
+        preferredAddress,
+        helperAddress
+      ),
+    };
+  }
+
+  function patchModernSnow(rom, force, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const hailLocated = locateNearby(
+      rom,
+      overlay.start + MODERN_SNOW_HAIL_CHIP_REL,
+      MODERN_SNOW_HAIL_CHIP_ORIGINAL,
+      MODERN_SNOW_HAIL_CHIP_PATCHED,
+      0x200,
+      "Modern snow hail chip branch"
+    );
+    const hailState = requireBytes(
+      rom,
+      hailLocated.offset,
+      MODERN_SNOW_HAIL_CHIP_ORIGINAL,
+      MODERN_SNOW_HAIL_CHIP_PATCHED,
+      force,
+      "Modern snow hail chip branch"
+    );
+
+    const arm9 = getArm9Info(rom);
+    const preferredHelperAt = arm9Offset(rom, MODERN_SNOW_HELPER_RAM, MODERN_SNOW_HELPER.length);
+    let helperAt = preferredHelperAt;
+    let helperRamAddress = MODERN_SNOW_HELPER_RAM;
+    let helperUsedFallback = false;
+    if (
+      !bytesEqual(rom, preferredHelperAt, MODERN_SNOW_HELPER) &&
+      !bytesEqual(rom, preferredHelperAt, new Uint8Array(MODERN_SNOW_HELPER.length).fill(0x00))
+    ) {
+      const existingHits = findNeedle(
+        rom,
+        MODERN_SNOW_HELPER,
+        arm9.fileOffset,
+        arm9.fileOffset + arm9.size
+      );
+      if (existingHits.length === 1) {
+        helperAt = existingHits[0];
+        helperRamAddress = arm9.loadAddress + (helperAt - arm9.fileOffset);
+        helperUsedFallback = helperAt !== preferredHelperAt;
+      } else {
+        const searchStart = arm9Offset(rom, MODERN_SNOW_HELPER_SEARCH_START_RAM);
+        const searchEnd = arm9Offset(rom, MODERN_SNOW_HELPER_SEARCH_END_RAM);
+        const dynamicCave = findFillRun(
+          rom,
+          searchStart,
+          searchEnd,
+          0x00,
+          MODERN_SNOW_HELPER.length,
+          preferredHelperAt
+        );
+        if (dynamicCave === -1) {
+          throw new PatchError("Modern snow could not find a free ARM9 helper cave.");
+        }
+        helperAt = dynamicCave;
+        helperRamAddress = arm9.loadAddress + (helperAt - arm9.fileOffset);
+        helperUsedFallback = true;
+      }
+    }
+    const helperExpected = new Uint8Array(MODERN_SNOW_HELPER.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      MODERN_SNOW_HELPER,
+      force,
+      "Modern snow Defense helper"
+    );
+
+    const hookLocated = findModernSnowDefenseHook(rom, overlay, helperRamAddress);
+    const hookState = requireBytes(
+      rom,
+      hookLocated.offset,
+      hookLocated.originalBytes,
+      hookLocated.patchedBytes,
+      force,
+      "Modern snow Defense hook"
+    );
+
+    if (hailState !== "already") {
+      writeBytes(rom, hailLocated.offset, MODERN_SNOW_HAIL_CHIP_PATCHED);
+    }
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, MODERN_SNOW_HELPER);
+    }
+    if (hookState !== "already") {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+
+    if (hailState === "already" && helperState === "already" && hookState === "already") {
+      log.push("Modern snow: already patched.");
+      return;
+    }
+
+    const notes = [];
+    if (hailLocated.usedFallback) {
+      notes.push("hail branch fallback scan");
+    }
+    if (hookLocated.usedFallback) {
+      notes.push("Defense hook fallback scan");
+    }
+    if (helperUsedFallback) {
+      notes.push("helper cave fallback scan");
+    }
+    log.push(
+      `Modern snow: removed Hail chip damage at overlay 16+${hex(
+        hailLocated.offset - overlay.start
+      )}; Ice-type physical Defense boost hook at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; helper at ARM9 RAM ${hex(helperRamAddress)}${
+        notes.length ? ` (${notes.join(", ")})` : ""
+      }.`
+    );
+  }
+
   function patchPlayerAccuracy(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
     const expectedRel = 0x140fa;
@@ -3157,9 +4056,15 @@
     critOdds: patchCritOdds,
     critDamage: patchCritDamage15,
     noCrits: patchNoCrits,
+    modernParalysis: patchModernParalysis,
+    modernBurn: patchModernBurn,
+    modernSleep: patchModernSleep,
+    modernConfusion: patchModernConfusion,
+    modernSnow: patchModernSnow,
     iv15_31: patchIv15To31,
     wildNatures: patchWildNatures,
     movementSpeed: patchMovementSpeed,
+    noOverworldPoison: patchNoOverworldPoison,
     fairyType: patchFairyType,
     fairyPokemonTypes: patchFairyPokemonTypes,
     instantText: patchInstantText,
@@ -3227,10 +4132,22 @@
               ? `crit1in${critBaseDivisorOption(options)}`
             : id === "critDamage"
               ? "crit15x"
+            : id === "modernParalysis"
+              ? "modernparalysis"
+            : id === "modernBurn"
+              ? "modernburn"
+            : id === "modernSleep"
+              ? "modernsleep"
+            : id === "modernConfusion"
+              ? "modernconfusion"
+            : id === "modernSnow"
+              ? "modernsnow"
             : id === "iv15_31"
               ? `iv${ivRangeText(options)}`
-              : id === "wildNatures"
-                ? `natures${natureMaskText(options)}`
+            : id === "wildNatures"
+              ? `natures${natureMaskText(options)}`
+            : id === "noOverworldPoison"
+              ? "nooverworldpoison"
             : id.replace(/_/g, "")
       )
       .join(".");

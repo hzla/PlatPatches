@@ -42,7 +42,7 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v43";
+  const APP_VERSION = "v44";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -255,7 +255,7 @@
         "Requires the DSPRE ARM9 expansion. Helper code and a small item snapshot table are stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
         "BattleSystem_InitBattleMon snapshot hook: overlay 16 pkaizo +0x16B5C / clean +0x16B54, RAM 0x02251C9C / 0x02251C94.",
         "BattleControllerPlayer_EndFight restore hook: overlay 16 pkaizo +0x15628 / clean +0x15620, RAM 0x02250768 / 0x02250760.",
-        "The helper skips link, tag, and 2-vs-2 battle types so it does not accidentally restore a partner or remote party.",
+        "Tag and 2-vs-2 battles are supported by snapshotting only the actual player save-party battler. Link battles are still skipped.",
       ],
     },
     instantPartyHealing: {
@@ -5444,7 +5444,7 @@
     );
   }
 
-  const ITEM_RENEWAL_MARKER = "item_renewal_v4";
+  const ITEM_RENEWAL_MARKER = "item_renewal_v5";
   const ITEM_RENEWAL_LEGACY_MARKERS = ["item_renewal_v1", "item_renewal_v2"];
   const ITEM_RENEWAL_INIT_PKAIZO_REL = 0x16b5c;
   const ITEM_RENEWAL_END_PKAIZO_REL = 0x15628;
@@ -5452,40 +5452,41 @@
   const ITEM_RENEWAL_END_ORIGINAL = bytesFromHex("70 b5 06 1c");
   const ITEM_RENEWAL_TEMPLATE = bytesFromHex(`
     1f b5 74 46 c0 46 c0 46 a6 46 1f bc f8 b5 84 b0
-    70 47 f0 b5 04 1c 0d 1c 16 1c 1f 1c 06 2f 23 d2
-    20 1c c0 46 c0 46 1c 21 08 42 1d d1 01 20 30 42
-    1a d1 0e 48 01 68 a9 42 03 d0 05 60 00 21 01 61
-    81 82 10 30 c1 5d 00 29 0e d1 01 21 c1 55 20 1c
-    31 1c 3a 1c c0 46 c0 46 06 21 00 22 c0 46 c0 46
-    03 4b 04 33 7a 00 98 52 f0 bd c0 46 00 00 00 00
-    00 00 00 00 1f b5 74 46 c0 46 c0 46 a6 46 1f bc
-    70 b5 06 1c 70 47 f0 b5 81 b0 04 1c 0d 1c 20 1c
-    c0 46 c0 46 1c 21 08 42 27 d1 15 4e 30 68 a8 42
-    23 d1 00 27 06 2f 1c d2 30 1c 10 30 c0 5d 00 28
-    15 d0 20 1c 00 21 3a 1c c0 46 c0 46 05 1c 06 21
-    00 22 c0 46 c0 46 00 28 09 d1 0a 4b 04 33 7a 00
-    9a 5a 00 92 28 1c 06 21 6a 46 c0 46 c0 46 01 37
-    e0 e7 00 20 30 60 30 61 b0 82 01 b0 f0 bd c0 46
-    00 00 00 00 00 00 00 00
+    70 47 f0 b5 04 46 0d 46 16 46 1f 46 06 2f 29 d2
+    20 46 c0 46 c0 46 02 46 04 21 08 42 22 d1 01 20
+    30 42 1f d1 18 20 10 42 01 d0 00 2e 1a d1 0e 48
+    01 68 a9 42 03 d0 05 60 00 21 01 61 81 82 10 30
+    c1 5d 00 29 0e d1 01 21 c1 55 20 46 31 46 3a 46
+    c0 46 c0 46 06 21 00 22 c0 46 c0 46 03 4b 04 33
+    7a 00 98 52 f0 bd c0 46 00 00 00 00 00 00 00 00
+    1f b5 74 46 c0 46 c0 46 a6 46 1f bc 70 b5 06 46
+    70 47 f0 b5 81 b0 04 46 0d 46 20 46 c0 46 c0 46
+    04 21 08 42 27 d1 15 4e 30 68 a8 42 23 d1 00 27
+    06 2f 1c d2 30 46 10 30 c0 5d 00 28 15 d0 20 46
+    00 21 3a 46 c0 46 c0 46 05 46 06 21 00 22 c0 46
+    c0 46 00 28 09 d1 0a 4b 04 33 7a 00 9a 5a 00 92
+    28 46 06 21 6a 46 c0 46 c0 46 01 37 e0 e7 00 20
+    30 60 30 61 b0 82 01 b0 f0 bd c0 46 00 00 00 00
+    00 00 00 00
   `);
   const ITEM_RENEWAL_OFFSETS = {
     snapshotHook: 0x00,
     snapshotCore: 0x12,
     snapBlCore: 0x04,
     snapBlGetType: 0x22,
-    snapBlGetParty: 0x54,
-    snapBlGetValue: 0x5c,
-    snapDataPtr1: 0x6c,
-    snapDataPtr2: 0x70,
-    restoreHook: 0x74,
-    restoreCore: 0x86,
-    restoreBlCore: 0x78,
-    restoreBlGetType: 0x90,
-    restoreBlGetParty: 0xb8,
-    restoreBlGetValue: 0xc2,
-    restoreBlSetValue: 0xda,
-    restoreDataPtr1: 0xf0,
-    restoreDataPtr2: 0xf4,
+    snapBlGetParty: 0x60,
+    snapBlGetValue: 0x68,
+    snapDataPtr1: 0x78,
+    snapDataPtr2: 0x7c,
+    restoreHook: 0x80,
+    restoreCore: 0x92,
+    restoreBlCore: 0x84,
+    restoreBlGetType: 0x9c,
+    restoreBlGetParty: 0xc4,
+    restoreBlGetValue: 0xce,
+    restoreBlSetValue: 0xe6,
+    restoreDataPtr1: 0xfc,
+    restoreDataPtr2: 0x100,
   };
   const BATTLE_SYSTEM_GET_BATTLE_TYPE_RAM = 0x0223df0c;
   const BATTLE_SYSTEM_GET_PARTY_POKEMON_RAM = 0x0223dfac;

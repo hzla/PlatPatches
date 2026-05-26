@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=37" />
+    <link rel="stylesheet" href="./styles.css?v=41" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v37</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v42</div>
       </section>
 
       <section class="panel upload-panel">
@@ -134,6 +134,14 @@
                 <span>
                   <strong>Modern sleep</strong>
                   <small>Sleep lasts at most two turns, with a 33% wake chance on turn two.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernFreeze" />
+                <span>
+                  <strong>Modern freeze</strong>
+                  <small>Freeze has a 25% thaw chance and always ends on the third frozen action.</small>
                 </span>
               </label>
 
@@ -294,6 +302,14 @@
               </label>
 
               <label class="patch-card">
+                <input type="checkbox" value="itemRenewal" />
+                <span>
+                  <strong>Item Renewal</strong>
+                  <small>Prevents player-side held item changes from being saved after battle.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
                 <input type="checkbox" value="instantPartyHealing" />
                 <span>
                   <strong>Instant party healing</strong>
@@ -392,6 +408,6 @@
       </dialog>
     </main>
 
-    <script src="./app.js?v=37"></script>
+    <script src="./app.js?v=41"></script>
   </body>
 </html>

@@ -14,6 +14,7 @@ Included patches:
 - Modern paralysis mechanics: Electric-type immunity, 12.5% full paralysis, and 50% Speed reduction
 - Modern burn mechanics: Facade ignores burn's physical damage reduction, and burn chip damage is 1/16 max HP
 - Modern sleep mechanics: two-turn maximum with a 33% second-turn wake chance
+- Modern freeze mechanics: 25% thaw chance with a forced third-action thaw
 - Modern confusion mechanics: one-third self-hit chance
 - Modern snow mechanics: Hail no longer deals chip damage and Ice-types get the physical Defense boost
 - Random IV range, configurable from 0-31
@@ -22,6 +23,7 @@ Included patches:
 - Faster player walk/run/cycling movement
 - Remove overworld poison step damage
 - Infinite Candy, replacing the Red Chain key item
+- Item Renewal, preventing player-side held item changes from being saved after battle
 - Instant party healing
 - Remove time-of-day evolution clock checks
 - VS Seeker QoL
@@ -44,6 +46,7 @@ Notes:
 - The movement patch now edits player movement constants instead of global movement action function tables. If it sees the older global movement edits made by this patcher, it restores those pointers before applying the safer player-scoped version.
 - The remove overworld poison patch disables the step-based poison damage routine in the field. It does not change poison damage in battle.
 - The Infinite Candy patch turns the Red Chain key item into a reusable Rare Candy-style party item. It requires the player to already own the Red Chain, renames it to Infinite Candy, keeps it in Key Items, blocks tossing, prevents removal when used, and returns to the party target prompt after ordinary successful level-ups. Evolution and other special item flows are left to the normal game code.
+- The Item Renewal patch marks player-side party update messages so the normal held-item writeback is skipped. Item loss, Trick, Switcheroo, Thief, and similar effects still work during battle, but player-side held-item changes are not saved. This is intentionally blunt: newly stolen or switched held items are not kept, and a consumed player-side item can reappear if that Pokemon leaves and re-enters during the same battle.
 - The G4Patcher simple patches are direct byte edits ported into the browser patcher with sanity checks. They do not use the DSPRE synthetic overlay.
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
 - The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
@@ -100,12 +103,13 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Modern paralysis helper | `0x020F30B4-0x020F30F7` | `0x000F70B4-0x000F70F7` | `0x44` | Clears the paralysis status bit before `BattleMon_Set` when the target is Electric-type. |
 | Modern burn helper | `0x020F3168-0x020F318B` | `0x000F7168-0x000F718B` | `0x24` | Runs the original burn damage-reduction check, but skips the halving when the move is Facade. |
 | Modern sleep helper | `0x020F321C-0x020F325B` | `0x000F721C-0x000F725B` | `0x40` | Handles clamped sleep decrement and the second-turn wake roll. |
+| Modern freeze helper | `0x020F3300-0x020F3333` preferred | `0x000F7300-0x000F7333` preferred | `0x34` | Tracks freeze action count in `BattleMon.padding007A`, rolls a 25% thaw chance, and forces thaw on the third frozen action. Can fallback to another nearby zero-filled ARM9 cave. |
 | Modern confusion helper | `0x020F3260-0x020F3277` | `0x000F7260-0x000F7277` | `0x18` | Calls the battle RNG and returns whether confusion should self-hit under the new one-third odds. |
 | Modern snow Defense helper | `0x020F32D0-0x020F32FB` preferred | `0x000F72D0-0x000F72FB` preferred | `0x2C` | Applies the Ice-type physical Defense boost before returning to the damage routine; can fallback to another nearby zero-filled ARM9 cave. |
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
-Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Older `chain_candy_start` and `inf_candy_remove_v1` helpers are detected so already-patched ROMs can migrate cleanly. New helpers are dynamically placed into the first large enough 16-byte-aligned zero-filled run unless an existing marker is found.
+Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. The shared `SyntheticOverlayAllocator` scans member `9` for an existing ASCII marker first, then dynamically places new payloads into the first large enough aligned zero-filled run. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Item Renewal allocates `item_renewal_v3` for its held-item writeback helper; existing `item_renewal_v1`/`item_renewal_v2` snapshot and restore hooks are detected and removed when possible. Older `chain_candy_start` and `inf_candy_remove_v1` helpers are detected so already-patched ROMs can migrate cleanly.
 
 These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, Remove EV gain, wild nature filter, Remove Surf/Waterfall checks, VS Seeker QoL, Dry Skin AI fix, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
 
@@ -144,8 +148,10 @@ Observed overlay bases:
 | Modern paralysis Speed divisor, battler 1 | 16 | `0x17FCA-0x17FCB` clean, `0x17FD2-0x17FD3` pkaizo | `0x0225310A-0x0225310B` clean, `0x02253112-0x02253113` pkaizo | `0x001F45D2-0x001F45D3` pkaizo | `0x2` | Changes the paralysis Speed penalty from divide-by-4 to divide-by-2. |
 | Modern paralysis Speed divisor, battler 2 | 16 | `0x18176-0x18177` clean, `0x1817E-0x1817F` pkaizo | `0x022532B6-0x022532B7` clean, `0x022532BE-0x022532BF` pkaizo | `0x001F477E-0x001F477F` pkaizo | `0x2` | Same Speed penalty change for the second battler in the speed comparison routine. |
 | Modern paralysis status hook | 16 | `0x79E2-0x79E5` | `0x02242B22-0x02242B25` | `0x001E3FE2-0x001E3FE5` | `0x4` | Redirects the battle-script status write to the ARM9 helper listed above. |
+| Item Renewal held-item writeback hook | 16 | `0x213A4-0x213A7` clean, `0x213C0-0x213C3` pkaizo | `0x0225C4E4-0x0225C4E7` clean, `0x0225C500-0x0225C503` pkaizo | `0x001FD9C0-0x001FD9C3` pkaizo | `0x4` | Hooks `BtlIOCmd_UpdatePartyMon` so player-side held-item writeback is skipped while enemy-side writeback remains normal. |
 | Modern burn Facade hook | 16 | `0x1FAF2-0x1FB07` clean, `0x1FB0E-0x1FB23` pkaizo | `0x0225AC32-0x0225AC47` clean, `0x0225AC4E-0x0225AC63` pkaizo | `0x001FCB0E-0x001FCB23` pkaizo | `0x16` | Replaces the burn damage-halving block with a branch to the ARM9 helper listed above. |
 | Modern sleep counter hook | 16 | `0x13A62-0x13A77` | `0x0224EBA2-0x0224EBB7` | `0x001F0062-0x001F0077` | `0x16` | Branches the sleep counter decrement to the ARM9 helper listed above. |
+| Modern freeze thaw hook | 16 | `0x13B48-0x13B59` | `0x0224EC88-0x0224EC99` | `0x001F0148-0x001F0159` | `0x12` | Replaces the vanilla `BattleSystem_RandNext() % 5` thaw check with a branch to the ARM9 helper listed above. |
 | Modern confusion self-hit hook | 16 | `0x13A7E-0x13A87` | `0x0224EBBE-0x0224EBC7` | `0x001F007E-0x001F0087` | `0xA` | Replaces the vanilla 50% confusion self-hit check with a branch to the ARM9 helper listed above. |
 | Modern snow hail chip removal | 16 | `0xA1EC-0xA205` | `0x0224532C-0x02245345` | `0x001E67EC-0x001E6805` | `0x1A` | Changes the Snow Cloak skip branch into an unconditional skip so Hail/Snow no longer deals end-of-turn chip damage; Ice Body healing remains. |
 | Modern snow Defense hook | 16 | `0x1F9D2-0x1F9D5` clean, `0x1F9EE-0x1F9F1` pkaizo | `0x0225AB12-0x0225AB15` clean, `0x0225AB2E-0x0225AB31` pkaizo | `0x001FBFEE-0x001FBFF1` pkaizo | `0x4` | Branches to the ARM9 helper inside the existing weather-not-suppressed block. |

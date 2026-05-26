@@ -19,6 +19,7 @@
     modernParalysis: "Modern paralysis",
     modernBurn: "Modern burn",
     modernSleep: "Modern sleep",
+    modernFreeze: "Modern freeze",
     modernConfusion: "Modern confusion",
     modernSnow: "Modern snow",
     iv15_31: "Random IV range",
@@ -26,6 +27,7 @@
     movementSpeed: "Faster movement",
     noOverworldPoison: "Remove overworld poison",
     infiniteContinuousCandy: "Infinite Candy",
+    itemRenewal: "Item Renewal",
     instantPartyHealing: "Instant party healing",
     timeOfDayEvos: "Remove time evo clock checks",
     vsSeekerQol: "VS Seeker QoL",
@@ -40,7 +42,7 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
   };
-  const APP_VERSION = "v37";
+  const APP_VERSION = "v42";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -166,6 +168,16 @@
         "The helper clamps older longer sleep counters, decrements once per action attempt, and rolls the 33% second-turn wake chance.",
       ],
     },
+    modernFreeze: {
+      title: "Modern freeze",
+      summary:
+        "Makes freeze less sticky in battle. A frozen Pokemon has a 25% chance to thaw when it tries to move, and if it stays frozen twice it will always thaw on the third frozen action.",
+      regions: [
+        "Overlay 16 freeze thaw-roll hook: +0x13B48-0x13B59.",
+        "ARM9 helper: RAM 0x020F3300-0x020F3333 / ROM 0x000F7300-0x000F7333 preferred; can fallback to another nearby zero-filled cave.",
+        "The helper uses BattleMon padding007A as a temporary per-battler freeze-turn counter. It is battle-local padding, not save data.",
+      ],
+    },
     modernConfusion: {
       title: "Modern confusion",
       summary:
@@ -233,6 +245,18 @@
         "Red Chain item-table graphics: ARM9 RAM 0x020F1A8E-0x020F1A91 / ROM 0x000F5A8E-0x000F5A91. The Red Chain entry points at Rare Candy's icon and palette.",
         "Red Chain item data: itemtool/itemdata/pl_item_data.narc member 0x1A3 is given Rare Candy party-use behavior while staying in the Key Items pocket.",
         "Item text: msgdata/pl_msg.narc members 391-394 replace Red Chain description/name/article/plural strings.",
+      ],
+    },
+    itemRenewal: {
+      title: "Item Renewal",
+      summary:
+        "Stops battle held-item changes from being written back for the player's side. Consumed berries, Focus Sash, Trick, Switcheroo, Thief, and similar effects still work, but player-side held-item changes are not saved.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
+        "BtlIOCmd_UpdatePartyMon held-item writeback hook: overlay 16 pkaizo +0x213C0 / clean +0x213A4, RAM 0x0225C500 / 0x0225C4E4.",
+        "The helper marks the existing knocked-off-item mask for player-side battlers before the normal held-item writeback check runs. Enemy-side battlers keep the original behavior.",
+        "Because this hooks the shared party update path, a consumed player-side item can reappear if that Pokemon leaves and re-enters during the same battle.",
+        "Older Item Renewal snapshot/restore hooks from this patcher are detected and removed when possible.",
       ],
     },
     instantPartyHealing: {
@@ -327,6 +351,7 @@
   const DSPRE_SYNTH_OVERLAY_PATH = "data/weather_sys.narc";
   const DSPRE_SYNTH_OVERLAY_MEMBER = 9;
   const DSPRE_SYNTH_OVERLAY_SIZE = 0x16000;
+  const SYNTH_OVERLAY_RAM_BASE = 0x023c8000;
   const DSPRE_ARM9_BRANCH_RAM = 0x02000cb4;
   const DSPRE_ARM9_INIT_RAM = 0x02101574;
   const DSPRE_ARM9_BRANCH_ORIGINAL = bytesFromHex("00 20 03 21");
@@ -901,6 +926,110 @@
       synthMemberLength,
       synthAvailable,
     };
+  }
+
+  class SyntheticOverlayAllocator {
+    constructor(rom, log = []) {
+      this.rom = rom;
+      this.log = log;
+      this.reload();
+    }
+
+    reload() {
+      const status = dsPreArm9ExpansionStatus(this.rom);
+      if (!status.branchInstalled || !status.initInstalled || !status.synthAvailable) {
+        throw new PatchError(
+          "Synthetic overlay allocator requires the DSPRE ARM9 expansion. Apply DSPRE ARM9 expansion first."
+        );
+      }
+
+      const { file, narc, member } = readSyntheticOverlayMember(this.rom);
+      this.file = file;
+      this.narc = narc;
+      this.member = member;
+      return this;
+    }
+
+    ramAddress(memberOffset) {
+      return SYNTH_OVERLAY_RAM_BASE + memberOffset;
+    }
+
+    markerOffsets(marker) {
+      return findNeedle(this.member, asciiBytes(marker), 0, this.member.length);
+    }
+
+    findExisting(marker, buildPayload) {
+      const existing = this.markerOffsets(marker);
+      if (!existing.length) {
+        return null;
+      }
+
+      const markerOffset = existing[existing.length - 1];
+      const payloadRamAddress = this.ramAddress(markerOffset);
+      const built = buildPayload(payloadRamAddress);
+      const payloadBytes = built.bytes || built;
+      return {
+        markerOffset,
+        payloadRamAddress,
+        built,
+        payloadBytes,
+        exact: bytesEqual(this.member, markerOffset, payloadBytes),
+      };
+    }
+
+    allocate({ marker, buildPayload, label, alignment = 0x10, updateExisting = false }) {
+      const existing = this.findExisting(marker, buildPayload);
+      if (existing) {
+        if (existing.exact) {
+          this.log.push(
+            `${label}: reused existing synthetic-overlay payload at member ${hex(
+              existing.markerOffset
+            )} / RAM ${hex(existing.payloadRamAddress)}.`
+          );
+        } else if (updateExisting) {
+          const patchedMember = new Uint8Array(this.member);
+          if (existing.markerOffset + existing.payloadBytes.length > patchedMember.length) {
+            throw new PatchError(`${label} existing synthetic-overlay marker is too close to the end of the member.`);
+          }
+          patchedMember.set(existing.payloadBytes, existing.markerOffset);
+          replaceSyntheticOverlayMember(this.rom, patchedMember);
+          this.member = patchedMember;
+          this.log.push(
+            `${label}: updated existing synthetic-overlay payload at member ${hex(
+              existing.markerOffset
+            )} / RAM ${hex(existing.payloadRamAddress)}.`
+          );
+        } else {
+          this.log.push(
+            `${label}: found marker at member ${hex(
+              existing.markerOffset
+            )} / RAM ${hex(existing.payloadRamAddress)} and reused its addresses.`
+          );
+        }
+        return { ...existing, reused: true };
+      }
+
+      const provisional = buildPayload(SYNTH_OVERLAY_RAM_BASE);
+      const provisionalBytes = provisional.bytes || provisional;
+      const markerOffset = findAlignedZeroRun(this.member, provisionalBytes.length, alignment);
+      if (markerOffset === -1) {
+        throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
+      }
+
+      const payloadRamAddress = this.ramAddress(markerOffset);
+      const built = buildPayload(payloadRamAddress);
+      const payloadBytes = built.bytes || built;
+      const patchedMember = new Uint8Array(this.member);
+      patchedMember.set(payloadBytes, markerOffset);
+      replaceSyntheticOverlayMember(this.rom, patchedMember);
+      this.member = patchedMember;
+      this.log.push(
+        `${label}: allocated synthetic-overlay payload at member ${hex(markerOffset)} / RAM ${hex(
+          payloadRamAddress
+        )}, ${hex(payloadBytes.length)} byte(s).`
+      );
+      return { markerOffset, payloadRamAddress, built, payloadBytes, reused: false };
+    }
   }
 
   function patchArm9Expansion(rom, force, log) {
@@ -3035,7 +3164,6 @@
   const CHAIN_CANDY_MARKER = "chain_candy_red_v1";
   const LEGACY_INFINITE_CANDY_MARKER = "inf_candy_remove_v1";
   const INFINITE_CANDY_MARKER = "inf_redchain_remove_v1";
-  const SYNTH_OVERLAY_RAM_BASE = 0x023c8000;
   const CHAIN_CANDY_HOOK_RAM = 0x02085ec6;
   const BAG_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d60c;
   const POCKET_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d658;
@@ -3213,60 +3341,13 @@
   }
 
   function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
-    const { member } = readSyntheticOverlayMember(rom);
-    const existing = synthMarkerOffsets(member, marker);
-    if (existing.length > 0) {
-      const markerOffset = existing[existing.length - 1];
-      const payloadRamAddress = SYNTH_OVERLAY_RAM_BASE + markerOffset;
-      const built = buildPayload(payloadRamAddress);
-      const payloadBytes = built.bytes || built;
-      if (bytesEqual(member, markerOffset, payloadBytes)) {
-        log.push(
-          `${label}: reused existing synthetic-overlay payload at member ${hex(
-            markerOffset
-          )} / RAM ${hex(payloadRamAddress)}.`
-        );
-      } else if (options.updateExisting) {
-        const patchedMember = new Uint8Array(member);
-        if (markerOffset + payloadBytes.length > patchedMember.length) {
-          throw new PatchError(`${label} existing synthetic-overlay marker is too close to the end of the member.`);
-        }
-        patchedMember.set(payloadBytes, markerOffset);
-        replaceSyntheticOverlayMember(rom, patchedMember);
-        log.push(
-          `${label}: updated existing synthetic-overlay payload at member ${hex(
-            markerOffset
-          )} / RAM ${hex(payloadRamAddress)}.`
-        );
-      } else {
-        log.push(
-          `${label}: found marker at member ${hex(
-            markerOffset
-          )} / RAM ${hex(payloadRamAddress)} and reused its addresses.`
-        );
-      }
-      return { markerOffset, payloadRamAddress, built, reused: true };
-    }
-
-    const provisional = buildPayload(SYNTH_OVERLAY_RAM_BASE);
-    const provisionalBytes = provisional.bytes || provisional;
-    const markerOffset = findAlignedZeroRun(member, provisionalBytes.length, 0x10);
-    if (markerOffset === -1) {
-      throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
-    }
-
-    const payloadRamAddress = SYNTH_OVERLAY_RAM_BASE + markerOffset;
-    const built = buildPayload(payloadRamAddress);
-    const payloadBytes = built.bytes || built;
-    const patchedMember = new Uint8Array(member);
-    patchedMember.set(payloadBytes, markerOffset);
-    replaceSyntheticOverlayMember(rom, patchedMember);
-    log.push(
-      `${label}: allocated synthetic-overlay payload at member ${hex(markerOffset)} / RAM ${hex(
-        payloadRamAddress
-      )}, ${hex(payloadBytes.length)} byte(s).`
-    );
-    return { markerOffset, payloadRamAddress, built, reused: false };
+    return new SyntheticOverlayAllocator(rom, log).allocate({
+      marker,
+      buildPayload,
+      label,
+      alignment: options.alignment || 0x10,
+      updateExisting: Boolean(options.updateExisting),
+    });
   }
 
   function chainCandyFunctionOffset() {
@@ -4505,23 +4586,32 @@
 
   function patchModernParalysis(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
-    const chancePreferred = overlay.start + MODERN_PARALYSIS_CHANCE_REL;
-    const chanceLocated = locateNearby(
-      rom,
-      chancePreferred,
-      MODERN_PARALYSIS_CHANCE_ORIGINAL,
-      MODERN_PARALYSIS_CHANCE_PATCHED,
-      0x100,
-      "Modern paralysis chance"
-    );
-    const chanceState = requireBytes(
-      rom,
-      chanceLocated.offset,
-      MODERN_PARALYSIS_CHANCE_ORIGINAL,
-      MODERN_PARALYSIS_CHANCE_PATCHED,
-      force,
-      "Modern paralysis chance"
-    );
+    const freezeHookActive = isModernFreezeHookActive(rom, overlay);
+    let chanceLocated = {
+      offset: overlay.start + MODERN_PARALYSIS_CHANCE_REL,
+      usedFallback: false,
+      skippedByModernFreeze: freezeHookActive,
+    };
+    let chanceState = "already";
+    if (!freezeHookActive) {
+      const chancePreferred = overlay.start + MODERN_PARALYSIS_CHANCE_REL;
+      chanceLocated = locateNearby(
+        rom,
+        chancePreferred,
+        MODERN_PARALYSIS_CHANCE_ORIGINAL,
+        MODERN_PARALYSIS_CHANCE_PATCHED,
+        0x100,
+        "Modern paralysis chance"
+      );
+      chanceState = requireBytes(
+        rom,
+        chanceLocated.offset,
+        MODERN_PARALYSIS_CHANCE_ORIGINAL,
+        MODERN_PARALYSIS_CHANCE_PATCHED,
+        force,
+        "Modern paralysis chance"
+      );
+    }
 
     const speedSites = MODERN_PARALYSIS_SPEED_SITES.map((site) => {
       const located = locateNearby(
@@ -4601,6 +4691,9 @@
     const notes = [];
     if (chanceLocated.usedFallback) {
       notes.push("chance fallback scan");
+    }
+    if (chanceLocated.skippedByModernFreeze) {
+      notes.push("chance edit covered by Modern freeze hook");
     }
     if (hookLocated.usedFallback) {
       notes.push("status hook fallback scan");
@@ -4861,6 +4954,177 @@
       )}; helper at ARM9 RAM ${hex(MODERN_SLEEP_HELPER_RAM)}${
         hookLocated.usedFallback ? " (fallback scan)" : ""
       }.`
+    );
+  }
+
+  const MODERN_FREEZE_HOOK_REL = 0x13b48;
+  const MODERN_FREEZE_HOOK_ORIGINAL = bytesFromHex(`
+    06 98 f0 f7 17 fc c1 0f 82 07 52 1a 1e 20 c2 41 88 18
+  `);
+  const MODERN_FREEZE_HOOK_PARALYSIS_COMPAT = bytesFromHex(`
+    06 98 f0 f7 17 fc c1 0f 42 07 52 1a 1d 20 c2 41 88 18
+  `);
+  const MODERN_FREEZE_HOOK_ORIGINALS = [
+    MODERN_FREEZE_HOOK_ORIGINAL,
+    MODERN_FREEZE_HOOK_PARALYSIS_COMPAT,
+  ];
+  const MODERN_FREEZE_HELPER_RAM = 0x020f3300;
+  const MODERN_FREEZE_HELPER_SEARCH_START_RAM = 0x020f3300;
+  const MODERN_FREEZE_HELPER_SEARCH_END_RAM = 0x020f3800;
+
+  function buildModernFreezeHelper(helperAddress) {
+    const helper = bytesFromHex(`
+      10 b5 0c 1c 62 6e c0 21 4a 43 09 49 89 18 09 19
+      0a 88 01 32 0a 80 03 2a 06 d2 ff f7 fe ff 03 21
+      08 42 01 d0 01 20 10 bd 00 22 0a 80 00 20 10 bd
+      ba 2d 00 00
+    `);
+    helper.set(thumbBl(helperAddress + 0x1a, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x1a);
+    return helper;
+  }
+
+  function modernFreezeHook(fromAddress, helperAddress) {
+    const hook = new Uint8Array(MODERN_FREEZE_HOOK_ORIGINAL.length);
+    hook.set(bytesFromHex("06 98 21 1c"), 0); // ldr r0,[sp,#0x18]; adds r1,r4,#0
+    hook.set(thumbBl(fromAddress + 0x4, helperAddress), 0x4);
+    hook.set(bytesFromHex("00 28"), 0x8); // existing bne after this block uses the helper result
+    for (let i = 0xa; i < hook.length; i += 2) {
+      hook[i] = 0xc0;
+      hook[i + 1] = 0x46;
+    }
+    return hook;
+  }
+
+  function bytesMatchModernFreezeHook(data, offset) {
+    const prefix = bytesFromHex("06 98 21 1c");
+    const suffix = bytesFromHex("00 28 c0 46 c0 46 c0 46 c0 46");
+    return bytesEqual(data, offset, prefix) && bytesEqual(data, offset + 0x8, suffix);
+  }
+
+  function isModernFreezeHookActive(rom, overlay) {
+    return bytesMatchModernFreezeHook(rom, overlay.start + MODERN_FREEZE_HOOK_REL);
+  }
+
+  function findModernFreezeHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_FREEZE_HOOK_REL;
+    const preferredHook = modernFreezeHook(overlay.loadAddress + MODERN_FREEZE_HOOK_REL, helperAddress);
+    if (bytesEqualAny(rom, preferred, MODERN_FREEZE_HOOK_ORIGINALS) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - MODERN_FREEZE_HOOK_ORIGINAL.length; offset += 2) {
+      const hookBytes = modernFreezeHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
+      if (bytesEqualAny(rom, offset, MODERN_FREEZE_HOOK_ORIGINALS) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern freeze fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function resolveModernFreezeHelperCave(rom, helper) {
+    const arm9 = getArm9Info(rom);
+    const preferredHelperAt = arm9Offset(rom, MODERN_FREEZE_HELPER_RAM, helper.length);
+    let helperAt = preferredHelperAt;
+    let helperRamAddress = MODERN_FREEZE_HELPER_RAM;
+    let helperUsedFallback = false;
+
+    if (
+      !bytesEqual(rom, preferredHelperAt, helper) &&
+      !bytesEqual(rom, preferredHelperAt, new Uint8Array(helper.length).fill(0x00))
+    ) {
+      const existingHits = findNeedle(rom, helper, arm9.fileOffset, arm9.fileOffset + arm9.size);
+      if (existingHits.length === 1) {
+        helperAt = existingHits[0];
+        helperRamAddress = arm9.loadAddress + (helperAt - arm9.fileOffset);
+        helperUsedFallback = helperAt !== preferredHelperAt;
+      } else {
+        const searchStart = arm9Offset(rom, MODERN_FREEZE_HELPER_SEARCH_START_RAM);
+        const searchEnd = arm9Offset(rom, MODERN_FREEZE_HELPER_SEARCH_END_RAM);
+        const dynamicCave = findFillRun(rom, searchStart, searchEnd, 0x00, helper.length, preferredHelperAt);
+        if (dynamicCave === -1) {
+          throw new PatchError("Modern freeze could not find a free ARM9 helper cave.");
+        }
+        helperAt = dynamicCave;
+        helperRamAddress = arm9.loadAddress + (helperAt - arm9.fileOffset);
+        helperUsedFallback = true;
+      }
+    }
+
+    return { helperAt, helperRamAddress, helperUsedFallback };
+  }
+
+  function patchModernFreeze(rom, force, log) {
+    const preferredHelper = buildModernFreezeHelper(MODERN_FREEZE_HELPER_RAM);
+    let { helperAt, helperRamAddress, helperUsedFallback } = resolveModernFreezeHelperCave(rom, preferredHelper);
+    const helper = helperRamAddress === MODERN_FREEZE_HELPER_RAM
+      ? preferredHelper
+      : buildModernFreezeHelper(helperRamAddress);
+    if (helperRamAddress !== MODERN_FREEZE_HELPER_RAM) {
+      ({ helperAt, helperRamAddress, helperUsedFallback } = resolveModernFreezeHelperCave(rom, helper));
+    }
+
+    const helperExpected = new Uint8Array(helper.length).fill(0x00);
+    const helperState = requireBytes(
+      rom,
+      helperAt,
+      helperExpected,
+      helper,
+      force,
+      "Modern freeze thaw helper"
+    );
+
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const hookLocated = findModernFreezeHook(rom, overlay, helperRamAddress);
+    const hookAlready = bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes);
+    if (!hookAlready && !bytesEqualAny(rom, hookLocated.offset, MODERN_FREEZE_HOOK_ORIGINALS) && !force) {
+      const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + MODERN_FREEZE_HOOK_ORIGINAL.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern freeze hook sanity check failed at overlay 16+${hex(
+          hookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
+    if (helperState !== "already") {
+      writeBytes(rom, helperAt, helper);
+    }
+    if (!hookAlready) {
+      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+
+    if (helperState === "already" && hookAlready) {
+      log.push("Modern freeze: already patched.");
+      return;
+    }
+
+    const notes = [];
+    if (hookLocated.usedFallback) {
+      notes.push("hook fallback scan");
+    }
+    if (helperUsedFallback) {
+      notes.push("helper fallback scan");
+    }
+    log.push(
+      `Modern freeze: thaw chance is 25% with forced third-action thaw at overlay 16+${hex(
+        hookLocated.offset - overlay.start
+      )}; helper at ARM9 RAM ${hex(helperRamAddress)}${notes.length ? ` (${notes.join(", ")})` : ""}.`
     );
   }
 
@@ -5181,6 +5445,208 @@
     );
   }
 
+  const ITEM_RENEWAL_MARKER = "item_renewal_v3";
+  const ITEM_RENEWAL_LEGACY_MARKERS = ["item_renewal_v1", "item_renewal_v2"];
+  const ITEM_RENEWAL_INIT_PKAIZO_REL = 0x16b5c;
+  const ITEM_RENEWAL_END_PKAIZO_REL = 0x15628;
+  const ITEM_RENEWAL_INIT_ORIGINAL = bytesFromHex("f8 b5 84 b0");
+  const ITEM_RENEWAL_END_ORIGINAL = bytesFromHex("70 b5 06 1c");
+  const ITEM_RENEWAL_LEGACY_OFFSETS = {
+    snapshotHook: 0x00,
+    restoreHook: 0x74,
+  };
+  const ITEM_RENEWAL_WRITEBACK_PKAIZO_REL = 0x213c0;
+  const ITEM_RENEWAL_WRITEBACK_CLEAN_REL = 0x213a4;
+  const ITEM_RENEWAL_WRITEBACK_ORIGINAL = bytesFromHex("70 78 00 07");
+  const ITEM_RENEWAL_WRITEBACK_TEMPLATE = bytesFromHex(`
+    10 b5 03 99 65 20 80 00 09 18 49 78 01 22 11 42
+    07 d1 70 78 00 07 00 0f ff f7 fe ff b1 68 01 43
+    b1 60 70 78 00 07 10 bd
+  `);
+  const FLAG_INDEX_RAM = 0x020787cc;
+
+  function patchArrayBl(out, offset, fromAddress, toAddress) {
+    const bytes = thumbBl(fromAddress, toAddress);
+    out[offset] = bytes[0];
+    out[offset + 1] = bytes[1];
+    out[offset + 2] = bytes[2];
+    out[offset + 3] = bytes[3];
+  }
+
+  function buildItemRenewalPayload(payloadRamAddress) {
+    const out = Array.from(asciiBytes(ITEM_RENEWAL_MARKER));
+    while (out.length % 2 !== 0) {
+      out.push(0);
+    }
+    const codeOffset = out.length;
+    out.push(...ITEM_RENEWAL_WRITEBACK_TEMPLATE);
+
+    const codeRam = payloadRamAddress + codeOffset;
+    patchArrayBl(out, codeOffset + 0x18, codeRam + 0x18, FLAG_INDEX_RAM);
+
+    return {
+      bytes: new Uint8Array(out),
+      codeOffset,
+      helperRam: codeRam,
+      codeSize: ITEM_RENEWAL_WRITEBACK_TEMPLATE.length,
+    };
+  }
+
+  function itemRenewalLegacyHookBytes(rom, label, hookRam) {
+    let member;
+    try {
+      member = readSyntheticOverlayMember(rom).member;
+    } catch (error) {
+      return [];
+    }
+
+    const out = [];
+    const targetOffset =
+      label === "Item Renewal snapshot"
+        ? ITEM_RENEWAL_LEGACY_OFFSETS.snapshotHook
+        : ITEM_RENEWAL_LEGACY_OFFSETS.restoreHook;
+    for (const marker of ITEM_RENEWAL_LEGACY_MARKERS) {
+      for (const markerOffset of findNeedle(member, asciiBytes(marker), 0, member.length)) {
+        const legacyCodeOffset = align(marker.length, 4) + 24;
+        const legacyTarget = SYNTH_OVERLAY_RAM_BASE + markerOffset + legacyCodeOffset + targetOffset;
+        out.push(new Uint8Array(thumbBl(hookRam, legacyTarget)));
+      }
+    }
+    return out;
+  }
+
+  function itemRenewalWritebackSignatureMatches(rom, offset) {
+    if (!bytesEqual(rom, offset, bytesFromHex("70 78 00 07 00 0f"))) {
+      return false;
+    }
+    return bytesEqual(
+      rom,
+      offset + 10,
+      bytesFromHex("b1 68 08 42 05 d1 32 1c 38 1c 06 21 0c 32")
+    );
+  }
+
+  function hookBytesForItemRenewalWriteback(hookRam, built) {
+    return new Uint8Array(thumbBl(hookRam, built.helperRam));
+  }
+
+  function locateItemRenewalWritebackHook(rom, built) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const preferred = overlay.start + ITEM_RENEWAL_WRITEBACK_PKAIZO_REL;
+    const preferredRam = overlay.loadAddress + ITEM_RENEWAL_WRITEBACK_PKAIZO_REL;
+    const preferredHook = hookBytesForItemRenewalWriteback(preferredRam, built);
+    if (
+      itemRenewalWritebackSignatureMatches(rom, preferred) ||
+      bytesEqual(rom, preferred, preferredHook)
+    ) {
+      return { offset: preferred, overlay, hookBytes: preferredHook, usedFallback: false };
+    }
+
+    const searchStart = Math.max(overlay.start, preferred - 0x60);
+    const searchEnd = Math.min(overlay.end, preferred + 0x60);
+    const hits = [];
+    for (let offset = searchStart; offset <= searchEnd - ITEM_RENEWAL_WRITEBACK_ORIGINAL.length; offset += 2) {
+      const ram = overlay.loadAddress + (offset - overlay.start);
+      const hookBytes = hookBytesForItemRenewalWriteback(ram, built);
+      if (itemRenewalWritebackSignatureMatches(rom, offset) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, overlay, hookBytes, usedFallback: true });
+      }
+    }
+    if (hits.length === 1) {
+      return hits[0];
+    }
+
+    throw new PatchError(
+      `Item Renewal held-item writeback hook was not found near overlay 16+${hex(
+        ITEM_RENEWAL_WRITEBACK_PKAIZO_REL
+      )}.`
+    );
+  }
+
+  function migrateLegacyItemRenewalHooks(rom, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const sites = [
+      {
+        label: "Item Renewal snapshot",
+        rel: ITEM_RENEWAL_INIT_PKAIZO_REL,
+        original: ITEM_RENEWAL_INIT_ORIGINAL,
+      },
+      {
+        label: "Item Renewal restore",
+        rel: ITEM_RENEWAL_END_PKAIZO_REL,
+        original: ITEM_RENEWAL_END_ORIGINAL,
+      },
+    ];
+    const migrated = [];
+
+    for (const site of sites) {
+      const preferred = overlay.start + site.rel;
+      const searchStart = Math.max(overlay.start, preferred - 0x60);
+      const searchEnd = Math.min(overlay.end, preferred + 0x60);
+
+      for (let offset = searchStart; offset <= searchEnd - site.original.length; offset += 2) {
+        const ram = overlay.loadAddress + (offset - overlay.start);
+        const legacyHooks = itemRenewalLegacyHookBytes(rom, site.label, ram);
+        if (legacyHooks.some((bytes) => bytesEqual(rom, offset, bytes))) {
+          writeBytes(rom, offset, site.original);
+          migrated.push(`${site.label} overlay 16+${hex(offset - overlay.start)}`);
+          break;
+        }
+      }
+    }
+
+    if (migrated.length) {
+      log.push(`Item Renewal: removed legacy snapshot/restore hook(s): ${migrated.join(", ")}.`);
+    }
+    return migrated.length;
+  }
+
+  function patchItemRenewal(rom, force, log) {
+    const allocation = allocateSyntheticPayload(
+      rom,
+      ITEM_RENEWAL_MARKER,
+      buildItemRenewalPayload,
+      log,
+      "Item Renewal helper"
+    );
+    const built = allocation.built;
+    const located = locateItemRenewalWritebackHook(rom, built);
+    const hookState = requireBytes(
+      rom,
+      located.offset,
+      ITEM_RENEWAL_WRITEBACK_ORIGINAL,
+      located.hookBytes,
+      force,
+      "Item Renewal held-item writeback hook"
+    );
+
+    if (hookState !== "already") {
+      writeBytes(rom, located.offset, located.hookBytes);
+    }
+
+    const migratedLegacyHooks = migrateLegacyItemRenewalHooks(rom, log);
+
+    if (hookState === "already" && allocation.reused && !migratedLegacyHooks) {
+      log.push("Item Renewal: already patched.");
+      return;
+    }
+
+    const notes = [];
+    if (located.usedFallback) {
+      notes.push("fallback scan");
+    }
+    if (migratedLegacyHooks) {
+      notes.push("legacy hooks removed");
+    }
+    log.push(
+      `Item Renewal: skips player-side held-item writeback at overlay 16+${hex(
+        located.offset - located.overlay.start
+      )}; helper RAM ${hex(built.helperRam)}${
+        notes.length ? ` (${notes.join(", ")})` : ""
+      }.`
+    );
+  }
+
   function patchPlayerAccuracy(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
     const expectedRel = 0x140fa;
@@ -5280,6 +5746,7 @@
     modernParalysis: patchModernParalysis,
     modernBurn: patchModernBurn,
     modernSleep: patchModernSleep,
+    modernFreeze: patchModernFreeze,
     modernConfusion: patchModernConfusion,
     modernSnow: patchModernSnow,
     iv15_31: patchIv15To31,
@@ -5287,6 +5754,7 @@
     movementSpeed: patchMovementSpeed,
     noOverworldPoison: patchNoOverworldPoison,
     infiniteContinuousCandy: patchInfiniteContinuousCandy,
+    itemRenewal: patchItemRenewal,
     instantPartyHealing: patchInstantPartyHealing,
     timeOfDayEvos: patchTimeOfDayEvos,
     vsSeekerQol: patchVsSeekerQol,
@@ -5317,7 +5785,7 @@
     if (selected.has("fairyPokemonTypes")) {
       selected.add("fairyType");
     }
-    if (selected.has("infiniteContinuousCandy")) {
+    if (selected.has("infiniteContinuousCandy") || selected.has("itemRenewal")) {
       selected.add("arm9Expansion");
     }
     if (debugFairyBattleTest && !selected.has("fairyType")) {
@@ -5380,6 +5848,8 @@
               ? "modernburn"
             : id === "modernSleep"
               ? "modernsleep"
+            : id === "modernFreeze"
+              ? "modernfreeze"
             : id === "modernConfusion"
               ? "modernconfusion"
             : id === "modernSnow"
@@ -5392,6 +5862,8 @@
               ? "nooverworldpoison"
             : id === "infiniteContinuousCandy"
               ? "infinitecandy"
+            : id === "itemRenewal"
+              ? "itemrenewal"
             : id === "removeEVs"
               ? "noevs"
             : id === "instantPartyHealing"

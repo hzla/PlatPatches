@@ -36,6 +36,7 @@ Included patches:
 - Shiny odds, configurable by integer percentage from 0% to 100%
 - Experimental normal async text speed, configurable from 2x to 10x
 - Player-side standard accuracy bypass
+- Nature stat colors on the Pokemon summary screen
 
 Notes:
 
@@ -62,6 +63,7 @@ Notes:
 - `100%` shiny odds can stall event/gift routines that explicitly reroll until a Pokemon is not shiny.
 - The experimental text speed patch first applies the fastest normal async text speed, then hooks the async text-printer task to render the selected number of normal characters per frame, from 2x to 10x. Callback-driven text falls back to one render per frame for safety, but timing quirks are still possible.
 - The player accuracy patch bypasses the standard accuracy miss roll. It does not remove type immunities, Protect, or semi-invulnerable state checks.
+- The nature stat colors patch colors summary-screen stats the same way later Gen 4 games do: red for nature boosts, blue for nature drops, black for neutral stats. It automatically installs/preserves the DSPRE ARM9 expansion so its helper can live in the synthetic overlay.
 - Several patches sanity-check their expected bytes and scan nearby if a compatible ROM has shifted code. The log calls out fallback scan usage and the patched offset.
 
 ## ARM9 usage map
@@ -99,6 +101,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Force fast text | `0x02027AC0-0x02027AD9` | `0x0002BAC0-0x0002BAD9` | `0x1A` | Field text-speed helper. |
 | Experimental text speed hook | `0x0201D97C-0x0201D983` | `0x0002197C-0x00021983` | `0x8` | Hooks the async text-printer task runner. |
 | Experimental text speed helper | `0x020795E0-0x0207969B` | `0x0007D5E0-0x0007D69B` | `0xBC` | Preferred helper cave; can fallback to another free ARM9 fill run. |
+| Nature stat colors hooks | `0x02090A50`, `0x02090A74`, `0x02090A9A`, `0x02090ABE`, `0x02090AE4` | `0x00094A50`, `0x00094A74`, `0x00094A9A`, `0x00094ABE`, `0x00094AE4` | `0x4` each | Redirects summary stat value printing to the synthetic-overlay helper. |
 | Fairy Patch ARM9 helper | `0x020F9400-0x020F943F` | `0x000FD400-0x000FD43F` | `0x40` | Type-effectiveness nibble-table reader helper. |
 | Modern paralysis helper | `0x020F30B4-0x020F30F7` | `0x000F70B4-0x000F70F7` | `0x44` | Clears the paralysis status bit before `BattleMon_Set` when the target is Electric-type. |
 | Modern burn helper | `0x020F3168-0x020F318B` | `0x000F7168-0x000F718B` | `0x24` | Runs the original burn damage-reduction check, but skips the halving when the move is Facade. |
@@ -109,7 +112,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
-Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. The shared `SyntheticOverlayAllocator` scans member `9` for an existing ASCII marker first, then dynamically places new payloads into the first large enough aligned zero-filled run. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Item Renewal allocates `item_renewal_v5` for its held-item snapshot table and end-of-battle restore helper. Older `chain_candy_start` and `inf_candy_remove_v1` helpers are detected so already-patched ROMs can migrate cleanly.
+Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. The shared `SyntheticOverlayAllocator` scans member `9` for an existing ASCII marker first, then dynamically places new payloads into the first large enough aligned zero-filled run. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Item Renewal allocates `item_renewal_v5` for its held-item snapshot table and end-of-battle restore helper. Nature stat colors allocates `NATSTATCOLOR1` for its summary print helper. Older `chain_candy_start` and `inf_candy_remove_v1` helpers are detected so already-patched ROMs can migrate cleanly.
 
 These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, Remove EV gain, wild nature filter, Remove Surf/Waterfall checks, VS Seeker QoL, Dry Skin AI fix, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
 
@@ -183,3 +186,5 @@ Fairy type research credit: Mikelan98 and BagBoy, "Fairy Type in Pokemon Platinu
 G4Patcher simple patch references credit: Kalaay.
 
 Continuous Rare Candy reference credit: Yako, Kalaay, Mixone; pokeplatinum team; Mikelan98 and Nomura for the ARM9 expansion basis.
+
+Nature stat colors guide credit: RavePossum.

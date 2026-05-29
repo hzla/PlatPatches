@@ -165,6 +165,16 @@
     throw new Error("PlatinumPatcherFieldMiscPatches failed to load.");
   }
 
+  const summaryScreenPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/summary-screen.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherSummaryScreenPatches
+        : undefined;
+  if (!summaryScreenPatches) {
+    throw new Error("PlatinumPatcherSummaryScreenPatches failed to load.");
+  }
+
   const { createPatchRegistry } = registryModule;
   const {
     PatchError,
@@ -205,8 +215,9 @@
     instantText: "Force fast text",
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
+    natureStatColors: "Nature stat colors",
   };
-  const APP_VERSION = "v44";
+  const APP_VERSION = "v46";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -497,6 +508,16 @@
         "Overlay 16 helper: +0x34C68-0x34C83 preferred, +0x34C84-0x34C9F pkaizo observed; can fallback to another 0xFF fill run.",
       ],
     },
+    natureStatColors: {
+      title: "Nature stat colors",
+      summary:
+        "Colors Attack, Defense, Sp. Atk, Sp. Def, and Speed values on the summary screen: red for nature-boosted stats, blue for nature-lowered stats, and black for neutral stats.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
+        "Summary stat print hooks: ARM9 RAM 0x02090A50, 0x02090A74, 0x02090A9A, 0x02090ABE, and 0x02090AE4.",
+        "The helper calls Platinum's existing Pokemon_GetStatAffinityOf routine and keeps HP/Ability text unchanged.",
+      ],
+    },
   };
   const CONSOLE_CONFIG = {
     debugFairyBattleTest: false,
@@ -679,6 +700,7 @@
     { id: "instantText", apply: textSpeedPatches.instantText },
     { id: "text4x", apply: textSpeedPatches.text4x },
     { id: "playerAccuracy", apply: fieldMiscPatches.playerAccuracy },
+    { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
   ]);
 
   function applySelectedPatches(inputBytes, patchIds, options = {}) {
@@ -696,7 +718,11 @@
     if (selected.has("fairyPokemonTypes")) {
       selected.add("fairyType");
     }
-    if (selected.has("infiniteContinuousCandy") || selected.has("itemRenewal")) {
+    if (
+      selected.has("infiniteContinuousCandy") ||
+      selected.has("itemRenewal") ||
+      selected.has("natureStatColors")
+    ) {
       selected.add("arm9Expansion");
     }
     if (debugFairyBattleTest && !selected.has("fairyType")) {
@@ -781,6 +807,8 @@
               ? "itemrenewal"
             : id === "removeEVs"
               ? "noevs"
+            : id === "natureStatColors"
+              ? "naturecolors"
             : id === "instantPartyHealing"
               ? "instanthealing"
             : id === "timeOfDayEvos"

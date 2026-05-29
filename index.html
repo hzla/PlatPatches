@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=44" />
+    <link rel="stylesheet" href="./styles.css?v=46" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v44</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v46</div>
       </section>
 
       <section class="panel upload-panel">
@@ -286,6 +286,14 @@
               </label>
 
               <label class="patch-card">
+                <input type="checkbox" value="natureStatColors" />
+                <span>
+                  <strong>Nature stat colors</strong>
+                  <small>Summary-screen stats show red boosts and blue drops from the Pokemon's nature.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
                 <input type="checkbox" value="noOverworldPoison" />
                 <span>
                   <strong>Remove overworld poison</strong>
@@ -395,6 +403,7 @@
           Continuous Rare Candy reference: Yako, Kalaay, Mixone; pokeplatinum team; Mikelan98 and
           Nomura for the ARM9 expansion basis.
         </p>
+        <p>Nature stat colors guide: RavePossum.</p>
       </footer>
 
       <dialog class="info-modal" id="patchInfoModal">
@@ -408,23 +417,24 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=44"></script>
-    <script src="./src/patches/registry.js?v=44"></script>
-    <script src="./src/patches/infrastructure.js?v=44"></script>
-    <script src="./src/patches/simple-sites.js?v=44"></script>
-    <script src="./src/patches/fairy-type.js?v=44"></script>
-    <script src="./src/patches/infinite-candy.js?v=44"></script>
-    <script src="./src/patches/item-renewal.js?v=44"></script>
-    <script src="./src/patches/text-speed.js?v=44"></script>
-    <script src="./src/patches/modern-status.js?v=44"></script>
-    <script src="./src/patches/battle-critical.js?v=44"></script>
-    <script src="./src/patches/rng-generation.js?v=44"></script>
-    <script src="./src/patches/wild-natures.js?v=44"></script>
-    <script src="./src/patches/battle-weather.js?v=44"></script>
-    <script src="./src/patches/frame-rate.js?v=44"></script>
-    <script src="./src/patches/field-movement.js?v=44"></script>
-    <script src="./src/patches/field-misc.js?v=44"></script>
-    <script src="./app.js?v=44"></script>
-    <script src="./src/ui/init-ui.js?v=44"></script>
+    <script src="./src/core.js?v=46"></script>
+    <script src="./src/patches/registry.js?v=46"></script>
+    <script src="./src/patches/infrastructure.js?v=46"></script>
+    <script src="./src/patches/simple-sites.js?v=46"></script>
+    <script src="./src/patches/fairy-type.js?v=46"></script>
+    <script src="./src/patches/infinite-candy.js?v=46"></script>
+    <script src="./src/patches/item-renewal.js?v=46"></script>
+    <script src="./src/patches/text-speed.js?v=46"></script>
+    <script src="./src/patches/modern-status.js?v=46"></script>
+    <script src="./src/patches/battle-critical.js?v=46"></script>
+    <script src="./src/patches/rng-generation.js?v=46"></script>
+    <script src="./src/patches/wild-natures.js?v=46"></script>
+    <script src="./src/patches/battle-weather.js?v=46"></script>
+    <script src="./src/patches/frame-rate.js?v=46"></script>
+    <script src="./src/patches/field-movement.js?v=46"></script>
+    <script src="./src/patches/field-misc.js?v=46"></script>
+    <script src="./src/patches/summary-screen.js?v=46"></script>
+    <script src="./app.js?v=46"></script>
+    <script src="./src/ui/init-ui.js?v=46"></script>
   </body>
 </html>

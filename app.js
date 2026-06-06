@@ -425,12 +425,12 @@
     itemRenewal: {
       title: "Item Renewal",
       summary:
-        "Preserves the player's saved held items after battle while keeping consumed items gone inside the current battle. Consumed berries and Focus Sash stay consumed during the fight, so switching out and back in does not bring the item back early.",
+        "Preserves player-side saved held items after battle while keeping consumed items gone inside the current battle. Consumed berries and Focus Sash stay consumed during the fight, including player-side doubles and tag partners, so switching out and back in does not bring the item back early.",
       regions: [
         "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9, loaded around RAM 0x023C8000.",
         "Battle update-party held-item writeback hook: overlay 16 pkaizo +0x213C0 / clean +0x213A4, RAM 0x0225C500 / 0x0225C4E4.",
         "Battle party held-item display cache hook: overlay 13 +0x14D8, RAM 0x022210F8.",
-        "The helper marks player-side held-item writeback messages as knocked off before the normal writeback check runs. If the outgoing held item is empty, it also marks the battle context knocked-off mask so switch-in reloads and battle party displays keep the item absent until battle ends.",
+        "The helper marks held-item writeback messages as knocked off before the normal writeback check runs. If the outgoing held item is empty, it also marks the matching battle-side knocked-off mask so switch-in reloads and battle party displays keep the item absent until battle ends.",
         "Older Item Renewal snapshot/restore hooks from this patcher are detected and removed when possible.",
       ],
     },

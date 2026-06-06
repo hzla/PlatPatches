@@ -49,7 +49,7 @@
     });
   }
 
-  const ITEM_RENEWAL_MARKER = "item_renewal_v11";
+  const ITEM_RENEWAL_MARKER = "item_renewal_v12";
   const ITEM_RENEWAL_LEGACY_HOOKS = [
     { marker: "item_renewal_v1", dataSize: 24, snapshotHook: 0x00, restoreStartHook: 0x74 },
     { marker: "item_renewal_v2", dataSize: 24, snapshotHook: 0x00, restoreStartHook: 0x74 },
@@ -64,9 +64,11 @@
     { marker: "item_renewal_v8", dataSize: 0x34, codeAlign: 4, writebackHook: 0xbc },
     { marker: "item_renewal_v9", dataSize: 0, codeAlign: 2, writebackHook: 0x00 },
     { marker: "item_renewal_v10", dataSize: 0, codeAlign: 2, writebackHook: 0x00 },
+    { marker: "item_renewal_v11", dataSize: 0, codeAlign: 2, writebackHook: 0x00 },
   ];
   const ITEM_RENEWAL_LEGACY_PARTY_HELD_ITEM_HOOKS = [
     { marker: "item_renewal_v10", dataSize: 0, codeAlign: 2, partyHeldItemHook: 0x44 },
+    { marker: "item_renewal_v11", dataSize: 0, codeAlign: 2, partyHeldItemHook: 0x44 },
   ];
   const ITEM_RENEWAL_INIT_PKAIZO_REL = 0x16b5c;
   const ITEM_RENEWAL_END_PKAIZO_REL = 0x15628;
@@ -78,18 +80,18 @@
   const ITEM_RENEWAL_FINAL_ORIGINAL = bytesFromHex("2c 20 a8 60");
   const ITEM_RENEWAL_WRITEBACK_ORIGINAL = bytesFromHex("70 78 00 07");
   const ITEM_RENEWAL_WRITEBACK_TEMPLATE = bytesFromHex(`
-    10 b5 03 99 65 20 80 00 09 18 49 78 01 22 11 42
-    15 d1 70 78 00 07 00 0f ff f7 fe ff 04 46 b1 68
-    01 43 b1 60 b2 89 00 2a 09 d1 02 98 ff f7 fe ff
-    71 21 89 00 42 58 23 46 db 05 1a 43 42 50 70 78
-    00 07 10 bd
+    30 b5 04 9d 65 20 80 00 2d 18 6d 78 70 78 00 07
+    00 0f ff f7 fe ff 04 1c b1 68 01 43 b1 60 b2 89
+    00 2a 0e d1 03 98 ff f7 fe ff 71 21 89 00 2a 1c
+    01 23 1a 40 d2 00 89 18 42 58 23 1c db 05 1a 43
+    42 50 70 78 00 07 30 bd
   `);
   const ITEM_RENEWAL_PARTY_HELD_ITEM_ORIGINAL = bytesFromHex("e0 83 60 68");
   const ITEM_RENEWAL_PARTY_HELD_ITEM_TEMPLATE = bytesFromHex(`
     ee b5 07 1c 07 9e 36 68 b0 68 ff f7 fe ff 05 1c
-    09 98 2c 36 30 5c 06 28 09 d2 ff f7 fe ff 71 21
-    89 00 6a 58 03 1c db 05 1a 42 00 d0 00 27 e7 83
-    60 68 ee bd
+    09 98 31 1c 2c 31 08 5c 06 28 0e d2 ff f7 fe ff
+    71 21 89 00 b2 6a 01 23 1a 40 d2 00 89 18 6a 58
+    03 1c db 05 1a 42 00 d0 00 27 e7 83 60 68 ee bd
   `);
   const FLAG_INDEX_RAM = 0x020787cc;
   const BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM = 0x0223df10;
@@ -116,8 +118,8 @@
     out.push(...ITEM_RENEWAL_PARTY_HELD_ITEM_TEMPLATE);
 
     const helperRam = payloadRamAddress + codeOffset;
-    patchArrayBl(out, codeOffset + 0x18, helperRam + 0x18, FLAG_INDEX_RAM);
-    patchArrayBl(out, codeOffset + 0x2c, helperRam + 0x2c, BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM);
+    patchArrayBl(out, codeOffset + 0x12, helperRam + 0x12, FLAG_INDEX_RAM);
+    patchArrayBl(out, codeOffset + 0x26, helperRam + 0x26, BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM);
     const partyHeldItemHelperRam = payloadRamAddress + partyHeldItemOffset;
     patchArrayBl(
       out,
@@ -125,7 +127,7 @@
       partyHeldItemHelperRam + 0x0a,
       BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM
     );
-    patchArrayBl(out, partyHeldItemOffset + 0x1a, partyHeldItemHelperRam + 0x1a, FLAG_INDEX_RAM);
+    patchArrayBl(out, partyHeldItemOffset + 0x1c, partyHeldItemHelperRam + 0x1c, FLAG_INDEX_RAM);
 
     return {
       bytes: new Uint8Array(out),
@@ -414,11 +416,11 @@
       notes.push("legacy hooks migrated");
     }
     log.push(
-      `Item Renewal: preserves player held items by masking held-item writeback at overlay 16+${hex(
+      `Item Renewal: preserves held items by masking held-item writeback at overlay 16+${hex(
         writebackLocated.offset - writebackLocated.overlay.start
       )}; hides consumed items in battle party displays at overlay 13+${hex(
         partyHeldItemLocated.offset - partyHeldItemLocated.overlay.start
-      )}; consumed player items also mark the battle context knocked-off mask to prevent mid-battle reloads; helper RAM ${hex(
+      )}; consumed items also mark the matching battle-side knocked-off mask to prevent mid-battle reloads; helper RAM ${hex(
         built.helperRam
       )}, party helper RAM ${hex(
         built.partyHeldItemHelperRam

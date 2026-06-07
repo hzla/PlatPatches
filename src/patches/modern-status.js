@@ -27,9 +27,13 @@
     findNeedle,
     locateNearby,
     locateUniquePatch,
+    replaceNarcMembers,
+    replaceRomFile,
+    narcMemberBytes,
   } = core;
 
   const BATTLE_SUB_SEQ_PATH = "battle/skill/sub_seq.narc";
+  const TRAINER_AI_SEQ_PATH = "battle/tr_ai/tr_ai_seq.narc";
 
   function thumbInst16(value) {
     return [value & 0xff, value >> 8];
@@ -75,6 +79,100 @@
     }
     runs.sort((a, b) => Math.abs(a - preferredOffset) - Math.abs(b - preferredOffset));
     return runs[0];
+  }
+
+  const UNIVERSAL_INFATUATION_REL = 0xa4f4;
+  const UNIVERSAL_INFATUATION_ORIGINAL = bytesFromHex(`
+    09 d0 0e 3e 8e 59 0f 21 09 04 31 42 03 d1 02 2d
+    01 d0 02 2a 04 d1
+  `);
+  const UNIVERSAL_INFATUATION_PATCHED = bytesFromHex(`
+    c0 46 0e 3e 8e 59 0f 21 09 04 31 42 03 d1 02 2d
+    c0 46 02 2a 04 e0
+  `);
+  const UNIVERSAL_INFATUATION_AI_ORIGINAL = bytesFromHex(`
+    0b 00 00 00 00 00 00 00 00 00 0f 00 a3 04 00 00
+    29 00 00 00 00 00 00 00 13 00 00 00 0c 00 00 00
+    9e 04 00 00 42 00 00 00 01 00 00 00 13 00 00 00
+    00 00 00 00 05 00 00 00 13 00 00 00 01 00 00 00
+    09 00 00 00 4c 00 00 00 94 04 00 00 42 00 00 00
+    00 00 00 00 13 00 00 00 01 00 00 00 09 00 00 00
+    4c 00 00 00 8d 04 00 00 42 00 00 00 00 00 00 00
+    13 00 00 00 00 00 00 00 02 00 00 00 4c 00 00 00
+    86 04 00 00 4d 00 00 00
+  `);
+  const UNIVERSAL_INFATUATION_AI_PATCHED = bytesFromHex(`
+    0b 00 00 00 00 00 00 00 00 00 0f 00 a3 04 00 00
+    29 00 00 00 00 00 00 00 13 00 00 00 0c 00 00 00
+    9e 04 00 00 4c 00 00 00 16 00 00 00 13 00 00 00
+    00 00 00 00 05 00 00 00 13 00 00 00 01 00 00 00
+    09 00 00 00 4c 00 00 00 94 04 00 00 42 00 00 00
+    00 00 00 00 13 00 00 00 01 00 00 00 09 00 00 00
+    4c 00 00 00 8d 04 00 00 42 00 00 00 00 00 00 00
+    13 00 00 00 00 00 00 00 02 00 00 00 4c 00 00 00
+    86 04 00 00 4d 00 00 00
+  `);
+
+  function patchUniversalInfatuationAi(rom, force, log) {
+    const file = findFileByPath(rom, TRAINER_AI_SEQ_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const member = narcMemberBytes(narc, 0);
+    const located = locateUniquePatch(
+      member,
+      UNIVERSAL_INFATUATION_AI_ORIGINAL,
+      UNIVERSAL_INFATUATION_AI_PATCHED,
+      "Universal infatuation trainer AI gender check"
+    );
+
+    if (located.state !== "already") {
+      const patchedMember = new Uint8Array(member);
+      writeBytes(patchedMember, located.offset, UNIVERSAL_INFATUATION_AI_PATCHED);
+      const patchedNarc = replaceNarcMembers(narc, [[0, patchedMember]]);
+      replaceRomFile(rom, file, patchedNarc, "Universal infatuation trainer AI");
+    }
+
+    log.push(
+      `Universal infatuation trainer AI: ${
+        located.state === "already" ? "already patched" : "bypassed gender rejection"
+      } in ${TRAINER_AI_SEQ_PATH} member 0+${hex(located.offset)}.`
+    );
+  }
+
+  function patchUniversalInfatuation(rom, force, log, options = {}) {
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    const preferred = overlay.start + UNIVERSAL_INFATUATION_REL;
+    const located = locateNearby(
+      rom,
+      preferred,
+      UNIVERSAL_INFATUATION_ORIGINAL,
+      UNIVERSAL_INFATUATION_PATCHED,
+      0x100,
+      "Universal infatuation gender checks"
+    );
+    const state = requireBytes(
+      rom,
+      located.offset,
+      UNIVERSAL_INFATUATION_ORIGINAL,
+      UNIVERSAL_INFATUATION_PATCHED,
+      force,
+      "Universal infatuation gender checks"
+    );
+
+    if (state !== "already") {
+      writeBytes(rom, located.offset, UNIVERSAL_INFATUATION_PATCHED);
+    }
+
+    log.push(
+      `Universal infatuation: ${
+        state === "already" ? "already patched" : "removed gender restrictions"
+      } in BtlCmd_TryAttract at overlay 16+${hex(located.offset - overlay.start)}${
+        located.usedFallback ? " (fallback scan)" : ""
+      }.`
+    );
+
+    if (options.universalInfatuationAi) {
+      patchUniversalInfatuationAi(rom, force, log);
+    }
   }
 
   const MODERN_PARALYSIS_CHANCE_REL = 0x13b4e;
@@ -972,6 +1070,7 @@
   }
 
   return {
+    universalInfatuation: patchUniversalInfatuation,
     modernParalysis: patchModernParalysis,
     modernBurn: patchModernBurn,
     modernSleep: patchModernSleep,

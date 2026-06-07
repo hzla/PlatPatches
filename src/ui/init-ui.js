@@ -72,6 +72,8 @@ function initUi() {
   const natureCountValue = document.getElementById("natureCountValue");
   const fairyTypeInput = document.getElementById("fairyTypePatch");
   const fairyPokemonTypesInput = document.getElementById("fairyPokemonTypesPatch");
+  const universalInfatuationInput = document.getElementById("universalInfatuationPatch");
+  const universalInfatuationAiInput = document.getElementById("universalInfatuationAiPatch");
 
   let loadedFile = null;
   let loadedBytes = null;
@@ -160,6 +162,7 @@ function initUi() {
         ivMax: ivMaxInput.value,
       }),
       natureAllowed: selectedNatureIds(),
+      universalInfatuationAi: universalInfatuationAiInput.checked,
       debugFairyBattleTest: Boolean(config.debugFairyBattleTest),
     };
   }
@@ -186,6 +189,9 @@ function initUi() {
     }
     if (id === "wildNatures") {
       return `${PATCHES[id]} (${natureAllowedOption(options).length} allowed)`;
+    }
+    if (id === "universalInfatuation" && options && options.universalInfatuationAi) {
+      return `${PATCHES[id]} (with trainer AI support)`;
     }
     return PATCHES[id];
   }
@@ -379,6 +385,18 @@ function initUi() {
   fairyTypeInput.addEventListener("change", () => {
     if (!fairyTypeInput.checked) {
       fairyPokemonTypesInput.checked = false;
+    }
+    clearDownload();
+  });
+  universalInfatuationAiInput.addEventListener("change", () => {
+    if (universalInfatuationAiInput.checked) {
+      universalInfatuationInput.checked = true;
+    }
+    clearDownload();
+  });
+  universalInfatuationInput.addEventListener("change", () => {
+    if (!universalInfatuationInput.checked) {
+      universalInfatuationAiInput.checked = false;
     }
     clearDownload();
   });

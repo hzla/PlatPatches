@@ -195,6 +195,7 @@
     modernSleep: "Modern sleep",
     modernFreeze: "Modern freeze",
     modernConfusion: "Modern confusion",
+    universalInfatuation: "Universal infatuation",
     modernSnow: "Modern snow",
     iv15_31: "Random IV range",
     wildNatures: "Filter wild natures",
@@ -217,7 +218,7 @@
     playerAccuracy: "Player accuracy bypass",
     natureStatColors: "Nature stat colors",
   };
-  const APP_VERSION = "v46";
+  const APP_VERSION = "v47";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -363,6 +364,16 @@
         "Overlay 16 confusion self-hit hook: +0x13A7E-0x13A87.",
         "ARM9 helper: RAM 0x020F3260-0x020F3277 / ROM 0x000F7260-0x000F7277.",
         "The helper calls the normal battle RNG and compares against a one-third threshold before returning to the original branch.",
+      ],
+    },
+    universalInfatuation: {
+      title: "Universal infatuation",
+      summary:
+        "Makes infatuation ignore gender restrictions. Attract, Cute Charm, and held-item infatuation can affect same-gender and genderless Pokemon; already-infatuated targets and Oblivious still behave normally. Optional trainer AI support stops AI scripts from penalizing Attract for gender reasons.",
+      regions: [
+        "Overlay 16 BtlCmd_TryAttract gender checks: +0xA4F4-0xA509.",
+        "NOPs the same-gender and genderless failure branches, while preserving the already-infatuated failure branch.",
+        "Optional trainer AI edit: battle/tr_ai/tr_ai_seq.narc member 0, Basic_CheckCannotAttract gender-check block around +0x14F0.",
       ],
     },
     modernSnow: {
@@ -683,6 +694,7 @@
     { id: "modernSleep", apply: modernStatusPatches.modernSleep },
     { id: "modernFreeze", apply: modernStatusPatches.modernFreeze },
     { id: "modernConfusion", apply: modernStatusPatches.modernConfusion },
+    { id: "universalInfatuation", apply: modernStatusPatches.universalInfatuation },
     { id: "modernSnow", apply: weatherPatches.modernSnow },
     { id: "iv15_31", apply: rngPatches.iv15_31 },
     { id: "wildNatures", apply: wildNaturePatches.wildNatures },
@@ -796,6 +808,10 @@
               ? "modernfreeze"
             : id === "modernConfusion"
               ? "modernconfusion"
+            : id === "universalInfatuation"
+              ? options && options.universalInfatuationAi
+                ? "universalinfatuationai"
+                : "universalinfatuation"
             : id === "modernSnow"
               ? "modernsnow"
             : id === "iv15_31"

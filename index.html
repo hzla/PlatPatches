@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=46" />
+    <link rel="stylesheet" href="./styles.css?v=47" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v46</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v47</div>
       </section>
 
       <section class="panel upload-panel">
@@ -117,7 +117,7 @@
                 <input type="checkbox" value="modernParalysis" />
                 <span>
                   <strong>Modern paralysis</strong>
-                  <small>Electric types cannot be paralyzed; turn loss is 12.5%; Speed is halved.</small>
+                  <small>Thunder Wave fails on Electric types; turn loss is 12.5%; Speed is halved.</small>
                 </span>
               </label>
 
@@ -152,6 +152,20 @@
                   <small>Confused Pokemon hit themselves about one-third of the time.</small>
                 </span>
               </label>
+
+              <div class="patch-card patch-card-config">
+                <input id="universalInfatuationPatch" type="checkbox" value="universalInfatuation" />
+                <div class="patch-body">
+                  <label class="patch-title" for="universalInfatuationPatch">
+                    <strong>Universal infatuation</strong>
+                    <small>Attract-style infatuation ignores gender restrictions.</small>
+                  </label>
+                  <label class="nested-toggle" for="universalInfatuationAiPatch">
+                    <input id="universalInfatuationAiPatch" type="checkbox" />
+                    <span>Patch trainer AI scoring</span>
+                  </label>
+                </div>
+              </div>
 
               <label class="patch-card">
                 <input type="checkbox" value="modernSnow" />
@@ -417,24 +431,24 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=46"></script>
-    <script src="./src/patches/registry.js?v=46"></script>
-    <script src="./src/patches/infrastructure.js?v=46"></script>
-    <script src="./src/patches/simple-sites.js?v=46"></script>
-    <script src="./src/patches/fairy-type.js?v=46"></script>
-    <script src="./src/patches/infinite-candy.js?v=46"></script>
-    <script src="./src/patches/item-renewal.js?v=46"></script>
-    <script src="./src/patches/text-speed.js?v=46"></script>
-    <script src="./src/patches/modern-status.js?v=46"></script>
-    <script src="./src/patches/battle-critical.js?v=46"></script>
-    <script src="./src/patches/rng-generation.js?v=46"></script>
-    <script src="./src/patches/wild-natures.js?v=46"></script>
-    <script src="./src/patches/battle-weather.js?v=46"></script>
-    <script src="./src/patches/frame-rate.js?v=46"></script>
-    <script src="./src/patches/field-movement.js?v=46"></script>
-    <script src="./src/patches/field-misc.js?v=46"></script>
-    <script src="./src/patches/summary-screen.js?v=46"></script>
-    <script src="./app.js?v=46"></script>
-    <script src="./src/ui/init-ui.js?v=46"></script>
+    <script src="./src/core.js?v=47"></script>
+    <script src="./src/patches/registry.js?v=47"></script>
+    <script src="./src/patches/infrastructure.js?v=47"></script>
+    <script src="./src/patches/simple-sites.js?v=47"></script>
+    <script src="./src/patches/fairy-type.js?v=47"></script>
+    <script src="./src/patches/infinite-candy.js?v=47"></script>
+    <script src="./src/patches/item-renewal.js?v=47"></script>
+    <script src="./src/patches/text-speed.js?v=47"></script>
+    <script src="./src/patches/modern-status.js?v=47"></script>
+    <script src="./src/patches/battle-critical.js?v=47"></script>
+    <script src="./src/patches/rng-generation.js?v=47"></script>
+    <script src="./src/patches/wild-natures.js?v=47"></script>
+    <script src="./src/patches/battle-weather.js?v=47"></script>
+    <script src="./src/patches/frame-rate.js?v=47"></script>
+    <script src="./src/patches/field-movement.js?v=47"></script>
+    <script src="./src/patches/field-misc.js?v=47"></script>
+    <script src="./src/patches/summary-screen.js?v=47"></script>
+    <script src="./app.js?v=47"></script>
+    <script src="./src/ui/init-ui.js?v=47"></script>
   </body>
 </html>

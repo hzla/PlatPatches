@@ -98,10 +98,12 @@ const INFINITE_CANDY_MARKER = "inf_redchain_remove_v1";
 const CHAIN_CANDY_HOOK_RAM = 0x02085ec6;
 const BAG_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d60c;
 const POCKET_TRY_REMOVE_ITEM_HOOK_RAM = 0x0207d658;
-const BAG_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d614;
-const POCKET_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d660;
-const BAG_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("f0 b5 83 b0 06 1c 0f 1c");
-const POCKET_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("70 b5 05 1c 0e 1c 1c 1c");
+const BAG_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d61c;
+const BAG_TRY_REMOVE_ITEM_SLOT_RAM = 0x0207d5e8;
+const POCKET_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d664;
+const POCKET_TRY_REMOVE_ITEM_COUNT_RAM = 0x0207d5b8;
+const BAG_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("f0 b5 83 b0 06 1c 0f 1c 15 1c 1c 1c");
+const POCKET_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("70 b5 05 1c 0e 1c 1c 1c ff f7 aa ff");
 
 function emitU32(out, value) {
   out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
@@ -109,6 +111,17 @@ function emitU32(out, value) {
 
 function literalJump(targetAddress) {
   const out = [0x00, 0x4b, 0x18, 0x47];
+  emitU32(out, targetAddress | 1);
+  return new Uint8Array(out);
+}
+
+function literalJumpPreserveR3(targetAddress) {
+  const out = [
+    0x08, 0xb4, // push {r3}
+    0x01, 0x4b, // ldr r3, [pc, #4]
+    0x18, 0x47, // bx r3
+    0x00, 0x00,
+  ];
   emitU32(out, targetAddress | 1);
   return new Uint8Array(out);
 }
@@ -125,6 +138,24 @@ function decodeLiteralJump(data, offset) {
     return null;
   }
   return readU32(data, offset + 4) & ~1;
+}
+
+function decodeLiteralJumpPreserveR3(data, offset) {
+  if (
+    offset < 0 ||
+    offset + 12 > data.length ||
+    data[offset] !== 0x08 ||
+    data[offset + 1] !== 0xb4 ||
+    data[offset + 2] !== 0x01 ||
+    data[offset + 3] !== 0x4b ||
+    data[offset + 4] !== 0x18 ||
+    data[offset + 5] !== 0x47 ||
+    data[offset + 6] !== 0x00 ||
+    data[offset + 7] !== 0x00
+  ) {
+    return null;
+  }
+  return readU32(data, offset + 8) & ~1;
 }
 
 function emitRedChainItemIdR1(emit16) {
@@ -227,6 +258,7 @@ function buildInfiniteCandyPayload(payloadRamAddress) {
   }
   const bagHelperOffset = out.length;
   out.push(
+    0x08, 0xbc, // pop {r3}, undoing the hook trampoline's save
     0x01, 0xb4, // push {r0}
     0xdd, 0x20, // mov r0, #0xdd
     0x40, 0x00, // lsl r0, r0, #1
@@ -238,6 +270,7 @@ function buildInfiniteCandyPayload(payloadRamAddress) {
     0x70, 0x47 // bx lr
   );
   out.push(...BAG_TRY_REMOVE_ITEM_EXPECTED);
+  out.push(...thumbBl(payloadRamAddress + out.length, BAG_TRY_REMOVE_ITEM_SLOT_RAM));
   out.push(...literalJump(BAG_TRY_REMOVE_ITEM_RESUME_RAM));
 
   while (out.length % 4 !== 0) {
@@ -245,6 +278,7 @@ function buildInfiniteCandyPayload(payloadRamAddress) {
   }
   const pocketHelperOffset = out.length;
   out.push(
+    0x08, 0xbc, // pop {r3}, undoing the hook trampoline's save
     0x01, 0xb4, // push {r0}
     0xdd, 0x20, // mov r0, #0xdd
     0x40, 0x00, // lsl r0, r0, #1
@@ -255,7 +289,8 @@ function buildInfiniteCandyPayload(payloadRamAddress) {
     0x01, 0x20, // mov r0, #1
     0x70, 0x47 // bx lr
   );
-  out.push(...POCKET_TRY_REMOVE_ITEM_EXPECTED);
+  out.push(...POCKET_TRY_REMOVE_ITEM_EXPECTED.slice(0, 8));
+  out.push(...thumbBl(payloadRamAddress + out.length, POCKET_TRY_REMOVE_ITEM_COUNT_RAM));
   out.push(...literalJump(POCKET_TRY_REMOVE_ITEM_RESUME_RAM));
 
   return {
@@ -335,13 +370,40 @@ function isLegacyChainCandyHook(rom) {
 
 function legacyRemovalHookTargets(rom) {
   const { member } = readSyntheticOverlayMember(rom);
-  const markerOffsets = synthMarkerOffsets(member, LEGACY_INFINITE_CANDY_MARKER);
+  const markerOffsets = [
+    ...synthMarkerOffsets(member, LEGACY_INFINITE_CANDY_MARKER),
+    ...synthMarkerOffsets(member, INFINITE_CANDY_MARKER),
+  ];
   const result = new Set();
-  const markerSize = align(LEGACY_INFINITE_CANDY_MARKER.length, 4);
+  const helperPrefixes = [
+    bytesFromHex("01 b4 dd 20 40 00 01 38"),
+    bytesFromHex("08 bc 01 b4 dd 20 40 00 01 38"),
+  ];
   for (const markerOffset of markerOffsets) {
+    const marker =
+      bytesEqual(member, markerOffset, asciiBytes(INFINITE_CANDY_MARKER))
+        ? INFINITE_CANDY_MARKER
+        : LEGACY_INFINITE_CANDY_MARKER;
+    const markerSize = align(marker.length, 4);
     const base = SYNTH_OVERLAY_RAM_BASE + markerOffset;
     result.add(base + markerSize);
     result.add(base + markerSize + 0x18);
+    result.add(base + 0x3c);
+    result.add(base + 0x40);
+    result.add(base + 0x44);
+    result.add(base + markerSize + 0x3c);
+    result.add(base + markerSize + 0x40);
+    result.add(base + markerSize + 0x44);
+    for (const prefix of helperPrefixes) {
+      for (const helperOffset of findNeedle(
+        member,
+        prefix,
+        markerOffset + markerSize,
+        Math.min(member.length, markerOffset + markerSize + 0x100)
+      )) {
+        result.add(SYNTH_OVERLAY_RAM_BASE + helperOffset);
+      }
+    }
   }
   return result;
 }
@@ -617,17 +679,21 @@ function patchInfiniteContinuousCandy(rom, force, log) {
   const bagHelperRam = infiniteBuilt.bagHelperRam;
   const pocketHelperRam = infiniteBuilt.pocketHelperRam;
 
-  const bagHookAt = arm9Offset(outRom, BAG_TRY_REMOVE_ITEM_HOOK_RAM, 8);
-  const pocketHookAt = arm9Offset(outRom, POCKET_TRY_REMOVE_ITEM_HOOK_RAM, 8);
-  const bagHook = literalJump(bagHelperRam);
-  const pocketHook = literalJump(pocketHelperRam);
+  const bagHookAt = arm9Offset(outRom, BAG_TRY_REMOVE_ITEM_HOOK_RAM, BAG_TRY_REMOVE_ITEM_EXPECTED.length);
+  const pocketHookAt = arm9Offset(outRom, POCKET_TRY_REMOVE_ITEM_HOOK_RAM, POCKET_TRY_REMOVE_ITEM_EXPECTED.length);
+  const bagHook = literalJumpPreserveR3(bagHelperRam);
+  const pocketHook = literalJumpPreserveR3(pocketHelperRam);
   const legacyRemovalTargets = legacyRemovalHookTargets(outRom);
   function removalHookState(offset, expected, patched, label) {
     if (bytesEqual(outRom, offset, patched)) {
       return "already";
     }
-    const target = decodeLiteralJump(outRom, offset);
-    if (bytesEqual(outRom, offset, expected) || (target != null && legacyRemovalTargets.has(target)) || force) {
+    const target = decodeLiteralJump(outRom, offset) ?? decodeLiteralJumpPreserveR3(outRom, offset);
+    if (
+      bytesEqual(outRom, offset, expected) ||
+      (target != null && legacyRemovalTargets.has(target)) ||
+      force
+    ) {
       return "patch";
     }
     const found = Array.from(outRom.slice(offset, offset + expected.length))

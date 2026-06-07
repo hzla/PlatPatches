@@ -23,10 +23,13 @@
     getArm9Info,
     arm9Offset,
     getOverlayRange,
+    findFileByPath,
     findNeedle,
     locateNearby,
     locateUniquePatch,
   } = core;
+
+  const BATTLE_SUB_SEQ_PATH = "battle/skill/sub_seq.narc";
 
   function thumbInst16(value) {
     return [value & 0xff, value >> 8];
@@ -356,9 +359,15 @@
     return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
   }
 
+  function locateBattleSubSeqPatch(rom, expected, alreadyPatched, label) {
+    const file = findFileByPath(rom, BATTLE_SUB_SEQ_PATH);
+    const located = locateUniquePatch(rom.slice(file.start, file.end), expected, alreadyPatched, label);
+    return { ...located, offset: file.start + located.offset, file, fileRelativeOffset: located.offset };
+  }
+
   function patchModernBurn(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
-    const burnDamage = locateUniquePatch(
+    const burnDamage = locateBattleSubSeqPatch(
       rom,
       MODERN_BURN_DAMAGE_ORIGINAL,
       MODERN_BURN_DAMAGE_PATCHED,
@@ -479,7 +488,7 @@
   }
 
   function patchModernSleep(rom, force, log) {
-    const sleepDuration = locateUniquePatch(
+    const sleepDuration = locateBattleSubSeqPatch(
       rom,
       MODERN_SLEEP_DURATION_ORIGINAL,
       MODERN_SLEEP_DURATION_PATCHED,

@@ -313,12 +313,14 @@
     modernParalysis: {
       title: "Modern paralysis",
       summary:
-        "Updates paralysis closer to newer games: Electric-type Pokemon cannot be paralyzed, a paralyzed Pokemon only loses its turn 12.5% of the time, and paralysis cuts Speed in half instead of quartering it.",
+        "Updates paralysis closer to newer games: Thunder Wave has no effect on Electric-type Pokemon, non-Electric paralysis effects can still work, a paralyzed Pokemon only loses its turn 12.5% of the time, and paralysis cuts Speed in half instead of quartering it.",
       regions: [
         "Overlay 16 full-paralysis chance: +0x13B4E-0x13B59.",
         "Overlay 16 Speed-order paralysis divisors: +0x17FCA clean / +0x17FD2 pkaizo, and +0x18176 clean / +0x1817E pkaizo.",
-        "Overlay 16 status-set hook: +0x79E2-0x79E5.",
-        "ARM9 helper: RAM 0x020F30B4-0x020F30F7 / ROM 0x000F70B4-0x000F70F7.",
+        "Overlay 16 Thunder Wave Electric-target hook: +0x1360C-0x1360F.",
+        "Overlay 16 status-set compatibility hook: +0x79E2-0x79E5.",
+        "ARM9 compatibility helper: RAM 0x020F30B4-0x020F30F7 / ROM 0x000F70B4-0x000F70F7.",
+        "ARM9 Thunder Wave helper: RAM 0x020F318C-0x020F31CF / ROM 0x000F718C-0x000F71CF.",
       ],
     },
     modernBurn: {

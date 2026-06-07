@@ -11,7 +11,7 @@ Included patches:
 - Critical hit odds, configurable as the base critical-hit divisor
 - Critical damage 1.5x
 - Remove EV gain
-- Modern paralysis mechanics: Electric-type immunity, 12.5% full paralysis, and 50% Speed reduction
+- Modern paralysis mechanics: Thunder Wave fails on Electric-type targets, 12.5% full paralysis, and 50% Speed reduction
 - Modern burn mechanics: Facade ignores burn's physical damage reduction, and burn chip damage is 1/16 max HP
 - Modern sleep mechanics: two-turn maximum with a 33% second-turn wake chance
 - Modern freeze mechanics: 25% thaw chance with a forced third-action thaw
@@ -52,7 +52,7 @@ Notes:
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
 - The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
 - The critical damage patch hooks the two battle damage multiplication sites so normal crits scale to `1.5x` instead of `2x`. Sniper crits scale from `3x` to `2.25x`.
-- The modern paralysis patch changes the full-paralysis turn-loss roll from `1/4` to `1/8`, changes the Speed penalty from `1/4` Speed to `1/2` Speed, and hooks battle-script status updates so Electric-type battlers have the paralysis bit cleared before the game writes the status back.
+- The modern paralysis patch changes the full-paralysis turn-loss roll from `1/4` to `1/8`, changes the Speed penalty from `1/4` Speed to `1/2` Speed, and makes Thunder Wave use the normal no-effect path against Electric-type targets. Non-Electric paralysis effects such as Glare, Body Slam, and Static can still paralyze Electric-type battlers.
 - The modern burn patch hooks the physical damage burn reduction so move `0x0107` / Facade skips that halving, and changes residual burn damage from `1/8` max HP to `1/16` max HP. It does not change Guts or Facade's existing status power boost.
 - The modern sleep patch changes newly applied battle sleep from a random `2-4` counter to a fixed `3` counter, then hooks the battle sleep decrement path. That gives a guaranteed first asleep action, a roughly 33% wake chance on the second action, and a guaranteed wake on the third action.
 - The modern confusion patch leaves confusion duration alone, but changes the self-hit roll from `BattleSystem_RandNext & 1` to a one-third threshold check.
@@ -103,7 +103,8 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Experimental text speed helper | `0x020795E0-0x0207969B` | `0x0007D5E0-0x0007D69B` | `0xBC` | Preferred helper cave; can fallback to another free ARM9 fill run. |
 | Nature stat colors hooks | `0x02090A50`, `0x02090A74`, `0x02090A9A`, `0x02090ABE`, `0x02090AE4` | `0x00094A50`, `0x00094A74`, `0x00094A9A`, `0x00094ABE`, `0x00094AE4` | `0x4` each | Redirects summary stat value printing to the synthetic-overlay helper. |
 | Fairy Patch ARM9 helper | `0x020F9400-0x020F943F` | `0x000FD400-0x000FD43F` | `0x40` | Type-effectiveness nibble-table reader helper. |
-| Modern paralysis helper | `0x020F30B4-0x020F30F7` | `0x000F70B4-0x000F70F7` | `0x44` | Clears the paralysis status bit before `BattleMon_Set` when the target is Electric-type. |
+| Modern paralysis compatibility helper | `0x020F30B4-0x020F30F7` | `0x000F70B4-0x000F70F7` | `0x44` | Pass-through shim for the old status-write hook; Thunder Wave Electric immunity is handled by the helper below. |
+| Modern paralysis Thunder Wave helper | `0x020F318C-0x020F31CF` | `0x000F718C-0x000F71CF` | `0x44` | Marks `MOVE_STATUS_INEFFECTIVE` when Thunder Wave targets an Electric-type battler, letting the vanilla no-effect message path run. |
 | Modern burn helper | `0x020F3168-0x020F318B` | `0x000F7168-0x000F718B` | `0x24` | Runs the original burn damage-reduction check, but skips the halving when the move is Facade. |
 | Modern sleep helper | `0x020F321C-0x020F325B` | `0x000F721C-0x000F725B` | `0x40` | Handles clamped sleep decrement and the second-turn wake roll. |
 | Modern freeze helper | `0x020F3300-0x020F3333` preferred | `0x000F7300-0x000F7333` preferred | `0x34` | Tracks freeze action count in `BattleMon.padding007A`, rolls a 25% thaw chance, and forces thaw on the third frozen action. Can fallback to another nearby zero-filled ARM9 cave. |
@@ -150,7 +151,8 @@ Observed overlay bases:
 | Modern paralysis chance | 16 | `0x13B4E-0x13B59` | `0x0224EC8E-0x0224EC99` | `0x001F014E-0x001F0159` | `0xC` | Changes the full-paralysis roll from modulo 4 to modulo 8. |
 | Modern paralysis Speed divisor, battler 1 | 16 | `0x17FCA-0x17FCB` clean, `0x17FD2-0x17FD3` pkaizo | `0x0225310A-0x0225310B` clean, `0x02253112-0x02253113` pkaizo | `0x001F45D2-0x001F45D3` pkaizo | `0x2` | Changes the paralysis Speed penalty from divide-by-4 to divide-by-2. |
 | Modern paralysis Speed divisor, battler 2 | 16 | `0x18176-0x18177` clean, `0x1817E-0x1817F` pkaizo | `0x022532B6-0x022532B7` clean, `0x022532BE-0x022532BF` pkaizo | `0x001F477E-0x001F477F` pkaizo | `0x2` | Same Speed penalty change for the second battler in the speed comparison routine. |
-| Modern paralysis status hook | 16 | `0x79E2-0x79E5` | `0x02242B22-0x02242B25` | `0x001E3FE2-0x001E3FE5` | `0x4` | Redirects the battle-script status write to the ARM9 helper listed above. |
+| Modern paralysis Thunder Wave Electric-target hook | 16 | `0x1360C-0x1360F` | `0x0224E74C-0x0224E74F` | `0x001EFC0C-0x001EFC0F` | `0x4` | Redirects the type-chart result path to the ARM9 helper listed above before the vanilla no-effect flag check. |
+| Modern paralysis status compatibility hook | 16 | `0x79E2-0x79E5` | `0x02242B22-0x02242B25` | `0x001E3FE2-0x001E3FE5` | `0x4` | Redirects the battle-script status write to the pass-through ARM9 helper so already-patched ROMs migrate without restoring the original call. |
 | Item Renewal held-item writeback hook | 16 | `0x213A4-0x213A7` clean, `0x213C0-0x213C3` pkaizo | `0x0225C4E4-0x0225C4E7` clean, `0x0225C500-0x0225C503` pkaizo | `0x001FD9C0-0x001FD9C3` pkaizo | `0x4` | Masks held-item writeback messages and marks the matching battle-side knocked-off mask when a battler item is consumed or lost. |
 | Item Renewal battle party display hook | 13 | `0x14D8-0x14DB` | `0x022210F8-0x022210FB` | `0x001C40D8-0x001C40DB` | `0x4` | Masks the battle party held-item cache for the current battler side so item icons and summary item text stay hidden mid-battle after consumption/loss. |
 | Modern burn Facade hook | 16 | `0x1FAF2-0x1FB07` clean, `0x1FB0E-0x1FB23` pkaizo | `0x0225AC32-0x0225AC47` clean, `0x0225AC4E-0x0225AC63` pkaizo | `0x001FCB0E-0x001FCB23` pkaizo | `0x16` | Replaces the burn damage-halving block with a branch to the ARM9 helper listed above. |

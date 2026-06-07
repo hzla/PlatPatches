@@ -111,10 +111,15 @@
     bytesFromHex("0f f0 65 fc"),
     bytesFromHex("0f f0 61 fc"),
   ];
+  const MODERN_PARALYSIS_THUNDER_WAVE_HOOK_REL = 0x1360c;
+  const MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL = bytesFromHex(`
+    0c 49 60 50 28 31 61 58 08 20 08 42 08 d0
+  `);
   const MODERN_PARALYSIS_HELPER_RAM = 0x020f30b4;
+  const MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM = 0x020f318c;
   const BATTLE_MON_SET_RAM = 0x022523f0;
 
-  function buildModernParalysisHelper(helperAddress) {
+  function buildLegacyModernParalysisHelper(helperAddress) {
     const helper = bytesFromHex(`
       f0 b5 04 1c 0d 1c 16 1c 1f 1c 34 2e 11 d1
       38 68 40 21 08 42 0d d0 c0 22 6a 43 09 4b
@@ -126,12 +131,53 @@
     return helper;
   }
 
+  function buildModernParalysisHelper(helperAddress) {
+    const helper = bytesFromHex("00 b5 00 00 00 00 00 bd");
+    helper.set(thumbBl(helperAddress + 0x2, BATTLE_MON_SET_RAM), 0x2);
+    return padBytes(helper, 0x44);
+  }
+
+  function buildModernParalysisThunderWaveHelper() {
+    return bytesFromHex(`
+      0c 49 60 50 0c 4a a2 58 56 2a 12 d1 e2 6e c0 23
+      5a 43 0a 4b a2 18 d0 5c 0d 28 03 d0 01 33 d0 5c
+      0d 28 06 d1 06 4a a0 58 06 23 98 43 08 23 18 43
+      a0 50 70 47 44 21 00 00 44 30 00 00 64 2d 00 00
+      6c 21 00 00
+    `);
+  }
+
   function modernParalysisHook(fromAddress, helperAddress) {
     return new Uint8Array(thumbBl(fromAddress, helperAddress));
   }
 
+  function modernParalysisThunderWaveHook(fromAddress, helperAddress) {
+    return new Uint8Array(thumbBl(fromAddress, helperAddress));
+  }
+
+  function modernParalysisThunderWaveHookContext(fromAddress, helperAddress) {
+    const context = new Uint8Array(MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL);
+    context.set(modernParalysisThunderWaveHook(fromAddress, helperAddress), 0);
+    return context;
+  }
+
   function bytesEqualAny(data, offset, expectedList) {
     return expectedList.some((expected) => bytesEqual(data, offset, expected));
+  }
+
+  function requireBytesWithAcceptedOriginals(data, offset, acceptedOriginals, alreadyPatched, force, label) {
+    if (bytesEqual(data, offset, alreadyPatched)) {
+      return "already";
+    }
+    if (!bytesEqualAny(data, offset, acceptedOriginals) && !force) {
+      const found = Array.from(data.slice(offset, offset + alreadyPatched.length))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `${label} sanity check failed at ${hex(offset)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    return "patch";
   }
 
   function findModernParalysisHook(rom, overlay, helperAddress) {
@@ -160,6 +206,47 @@
     if (hits.length > 1) {
       throw new PatchError(
         `Modern paralysis status hook fallback scan found multiple candidates: ${hits
+          .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
+          .join(", ")}.`
+      );
+    }
+
+    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+  }
+
+  function findModernParalysisThunderWaveHook(rom, overlay, helperAddress) {
+    const preferred = overlay.start + MODERN_PARALYSIS_THUNDER_WAVE_HOOK_REL;
+    const preferredRam = overlay.loadAddress + MODERN_PARALYSIS_THUNDER_WAVE_HOOK_REL;
+    const preferredHook = modernParalysisThunderWaveHook(preferredRam, helperAddress);
+    const preferredContext = modernParalysisThunderWaveHookContext(preferredRam, helperAddress);
+    if (
+      bytesEqual(rom, preferred, MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL) ||
+      bytesEqual(rom, preferred, preferredContext)
+    ) {
+      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    }
+
+    const hits = [];
+    const start = Math.max(overlay.start, preferred - 0x100);
+    const end = Math.min(overlay.end, preferred + 0x100);
+    for (let offset = start; offset <= end - MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL.length; offset += 2) {
+      const ramAddress = overlay.loadAddress + (offset - overlay.start);
+      const hookBytes = modernParalysisThunderWaveHook(ramAddress, helperAddress);
+      const hookContext = modernParalysisThunderWaveHookContext(ramAddress, helperAddress);
+      if (
+        bytesEqual(rom, offset, MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL) ||
+        bytesEqual(rom, offset, hookContext)
+      ) {
+        hits.push({ offset, hookBytes });
+      }
+    }
+
+    if (hits.length === 1) {
+      return { ...hits[0], usedFallback: true };
+    }
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Modern paralysis Thunder Wave type hook fallback scan found multiple candidates: ${hits
           .map((hit) => `overlay 16+${hex(hit.offset - overlay.start)}`)
           .join(", ")}.`
       );
@@ -218,15 +305,32 @@
     });
 
     const helper = buildModernParalysisHelper(MODERN_PARALYSIS_HELPER_RAM);
+    const legacyHelper = buildLegacyModernParalysisHelper(MODERN_PARALYSIS_HELPER_RAM);
     const helperAt = arm9Offset(rom, MODERN_PARALYSIS_HELPER_RAM, helper.length);
     const helperExpected = new Uint8Array(helper.length).fill(0x00);
-    const helperState = requireBytes(
+    const helperState = requireBytesWithAcceptedOriginals(
       rom,
       helperAt,
-      helperExpected,
+      [helperExpected, legacyHelper],
       helper,
       force,
-      "Modern paralysis Electric immunity helper"
+      "Modern paralysis compatibility helper"
+    );
+
+    const thunderWaveHelper = buildModernParalysisThunderWaveHelper();
+    const thunderWaveHelperAt = arm9Offset(
+      rom,
+      MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM,
+      thunderWaveHelper.length
+    );
+    const thunderWaveHelperExpected = new Uint8Array(thunderWaveHelper.length).fill(0x00);
+    const thunderWaveHelperState = requireBytes(
+      rom,
+      thunderWaveHelperAt,
+      thunderWaveHelperExpected,
+      thunderWaveHelper,
+      force,
+      "Modern paralysis Thunder Wave Electric immunity helper"
     );
 
     const hookLocated = findModernParalysisHook(rom, overlay, MODERN_PARALYSIS_HELPER_RAM);
@@ -247,6 +351,37 @@
       );
     }
 
+    const thunderWaveHookLocated = findModernParalysisThunderWaveHook(
+      rom,
+      overlay,
+      MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM
+    );
+    const thunderWaveHookContext = modernParalysisThunderWaveHookContext(
+      overlay.loadAddress + (thunderWaveHookLocated.offset - overlay.start),
+      MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM
+    );
+    const thunderWaveHookState =
+      bytesEqual(rom, thunderWaveHookLocated.offset, thunderWaveHookContext)
+        ? "already"
+        : bytesEqual(rom, thunderWaveHookLocated.offset, MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL) || force
+          ? "patch"
+          : null;
+    if (thunderWaveHookState == null) {
+      const found = Array.from(
+        rom.slice(
+          thunderWaveHookLocated.offset,
+          thunderWaveHookLocated.offset + MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL.length
+        )
+      )
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ");
+      throw new PatchError(
+        `Modern paralysis Thunder Wave type hook sanity check failed at overlay 16+${hex(
+          thunderWaveHookLocated.offset - overlay.start
+        )}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+
     if (chanceState !== "already") {
       writeBytes(rom, chanceLocated.offset, MODERN_PARALYSIS_CHANCE_PATCHED);
     }
@@ -258,15 +393,23 @@
     if (helperState !== "already") {
       writeBytes(rom, helperAt, helper);
     }
+    if (thunderWaveHelperState !== "already") {
+      writeBytes(rom, thunderWaveHelperAt, thunderWaveHelper);
+    }
     if (hookState !== "already") {
       writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    }
+    if (thunderWaveHookState !== "already") {
+      writeBytes(rom, thunderWaveHookLocated.offset, thunderWaveHookLocated.hookBytes);
     }
 
     if (
       chanceState === "already" &&
       speedSites.every((site) => site.state === "already") &&
       helperState === "already" &&
-      hookState === "already"
+      thunderWaveHelperState === "already" &&
+      hookState === "already" &&
+      thunderWaveHookState === "already"
     ) {
       log.push("Modern paralysis: already patched.");
       return;
@@ -282,6 +425,9 @@
     if (hookLocated.usedFallback) {
       notes.push("status hook fallback scan");
     }
+    if (thunderWaveHookLocated.usedFallback) {
+      notes.push("Thunder Wave hook fallback scan");
+    }
     if (speedSites.some((site) => site.usedFallback)) {
       notes.push("Speed divisor fallback scan");
     }
@@ -290,9 +436,11 @@
         chanceLocated.offset - overlay.start
       )}; paralysis Speed reduction is 50% at overlay 16+${speedSites
         .map((site) => hex(site.offset - overlay.start + 0xe))
-        .join(" and +")}; Electric-type immunity hook at overlay 16+${hex(
+        .join(" and +")}; Thunder Wave fails against Electric-type targets via overlay 16+${hex(
+        thunderWaveHookLocated.offset - overlay.start
+      )}; compatibility hook at overlay 16+${hex(
         hookLocated.offset - overlay.start
-      )}; helper at ARM9 RAM ${hex(MODERN_PARALYSIS_HELPER_RAM)}${
+      )}; helpers at ARM9 RAM ${hex(MODERN_PARALYSIS_HELPER_RAM)} and ${hex(MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM)}${
         notes.length ? ` (${notes.join(", ")})` : ""
       }.`
     );

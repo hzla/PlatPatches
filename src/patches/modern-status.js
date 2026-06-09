@@ -205,35 +205,13 @@
     },
   ];
   const MODERN_PARALYSIS_HOOK_REL = 0x79e2;
-  const MODERN_PARALYSIS_HOOK_ORIGINALS = [
-    bytesFromHex("0f f0 65 fc"),
-    bytesFromHex("0f f0 61 fc"),
-  ];
   const MODERN_PARALYSIS_THUNDER_WAVE_HOOK_REL = 0x1360c;
   const MODERN_PARALYSIS_THUNDER_WAVE_HOOK_CONTEXT_ORIGINAL = bytesFromHex(`
     0c 49 60 50 28 31 61 58 08 20 08 42 08 d0
   `);
   const MODERN_PARALYSIS_HELPER_RAM = 0x020f30b4;
   const MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM = 0x020f318c;
-  const BATTLE_MON_SET_RAM = 0x022523f0;
-
-  function buildLegacyModernParalysisHelper(helperAddress) {
-    const helper = bytesFromHex(`
-      f0 b5 04 1c 0d 1c 16 1c 1f 1c 34 2e 11 d1
-      38 68 40 21 08 42 0d d0 c0 22 6a 43 09 4b
-      a2 18 d0 5c 0d 28 03 d0 01 33 d0 5c 0d 28
-      02 d1 38 68 88 43 38 60 20 1c 29 1c 32 1c
-      3b 1c 00 00 00 00 f0 bd 64 2d 00 00
-    `);
-    helper.set(thumbBl(helperAddress + 0x3a, BATTLE_MON_SET_RAM), 0x3a);
-    return helper;
-  }
-
-  function buildModernParalysisHelper(helperAddress) {
-    const helper = bytesFromHex("00 b5 00 00 00 00 00 bd");
-    helper.set(thumbBl(helperAddress + 0x2, BATTLE_MON_SET_RAM), 0x2);
-    return padBytes(helper, 0x44);
-  }
+  const BATTLE_MON_SET_RAM_CANDIDATES = [0x022523e8, 0x022523f0];
 
   function buildModernParalysisThunderWaveHelper() {
     return bytesFromHex(`
@@ -263,38 +241,49 @@
     return expectedList.some((expected) => bytesEqual(data, offset, expected));
   }
 
-  function requireBytesWithAcceptedOriginals(data, offset, acceptedOriginals, alreadyPatched, force, label) {
-    if (bytesEqual(data, offset, alreadyPatched)) {
-      return "already";
+  function findModernParalysisBattleMonSetRam(rom, overlay) {
+    const candidates = BATTLE_MON_SET_RAM_CANDIDATES.map((ramAddress) => ({ ramAddress, hits: 0 }));
+    for (let offset = overlay.start; offset <= overlay.end - 4; offset += 2) {
+      const fromAddress = overlay.loadAddress + (offset - overlay.start);
+      for (const candidate of candidates) {
+        if (bytesEqual(rom, offset, thumbBl(fromAddress, candidate.ramAddress))) {
+          candidate.hits += 1;
+        }
+      }
     }
-    if (!bytesEqualAny(data, offset, acceptedOriginals) && !force) {
-      const found = Array.from(data.slice(offset, offset + alreadyPatched.length))
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join(" ");
+
+    candidates.sort((a, b) => b.hits - a.hits);
+    if (candidates[0].hits === 0 || candidates[0].hits === candidates[1].hits) {
       throw new PatchError(
-        `${label} sanity check failed at ${hex(offset)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+        `Modern paralysis could not identify this ROM's BattleMon_Set entrypoint. Candidate hit counts: ${candidates
+          .map((candidate) => `${hex(candidate.ramAddress)}=${candidate.hits}`)
+          .join(", ")}.`
       );
     }
-    return "patch";
+    return candidates[0].ramAddress;
   }
 
-  function findModernParalysisHook(rom, overlay, helperAddress) {
+  function findModernParalysisHook(rom, overlay, helperAddress, battleMonSetRam) {
     const preferred = overlay.start + MODERN_PARALYSIS_HOOK_REL;
+    const preferredRam = overlay.loadAddress + MODERN_PARALYSIS_HOOK_REL;
+    const preferredOriginal = new Uint8Array(thumbBl(preferredRam, battleMonSetRam));
     const preferredHook = modernParalysisHook(
-      overlay.loadAddress + MODERN_PARALYSIS_HOOK_REL,
+      preferredRam,
       helperAddress
     );
-    if (bytesEqualAny(rom, preferred, MODERN_PARALYSIS_HOOK_ORIGINALS) || bytesEqual(rom, preferred, preferredHook)) {
-      return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    if (bytesEqual(rom, preferred, preferredOriginal) || bytesEqual(rom, preferred, preferredHook)) {
+      return { offset: preferred, usedFallback: false, originalBytes: preferredOriginal, hookBytes: preferredHook };
     }
 
     const hits = [];
     const start = Math.max(overlay.start, preferred - 0x100);
     const end = Math.min(overlay.end, preferred + 0x100);
     for (let offset = start; offset <= end - 4; offset += 2) {
-      const hookBytes = modernParalysisHook(overlay.loadAddress + (offset - overlay.start), helperAddress);
-      if (bytesEqualAny(rom, offset, MODERN_PARALYSIS_HOOK_ORIGINALS) || bytesEqual(rom, offset, hookBytes)) {
-        hits.push({ offset, hookBytes });
+      const ramAddress = overlay.loadAddress + (offset - overlay.start);
+      const originalBytes = new Uint8Array(thumbBl(ramAddress, battleMonSetRam));
+      const hookBytes = modernParalysisHook(ramAddress, helperAddress);
+      if (bytesEqual(rom, offset, originalBytes) || bytesEqual(rom, offset, hookBytes)) {
+        hits.push({ offset, originalBytes, hookBytes });
       }
     }
 
@@ -309,7 +298,7 @@
       );
     }
 
-    return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
+    return { offset: preferred, usedFallback: false, originalBytes: preferredOriginal, hookBytes: preferredHook };
   }
 
   function findModernParalysisThunderWaveHook(rom, overlay, helperAddress) {
@@ -402,19 +391,6 @@
       return { ...site, ...located, state };
     });
 
-    const helper = buildModernParalysisHelper(MODERN_PARALYSIS_HELPER_RAM);
-    const legacyHelper = buildLegacyModernParalysisHelper(MODERN_PARALYSIS_HELPER_RAM);
-    const helperAt = arm9Offset(rom, MODERN_PARALYSIS_HELPER_RAM, helper.length);
-    const helperExpected = new Uint8Array(helper.length).fill(0x00);
-    const helperState = requireBytesWithAcceptedOriginals(
-      rom,
-      helperAt,
-      [helperExpected, legacyHelper],
-      helper,
-      force,
-      "Modern paralysis compatibility helper"
-    );
-
     const thunderWaveHelper = buildModernParalysisThunderWaveHelper();
     const thunderWaveHelperAt = arm9Offset(
       rom,
@@ -431,12 +407,13 @@
       "Modern paralysis Thunder Wave Electric immunity helper"
     );
 
-    const hookLocated = findModernParalysisHook(rom, overlay, MODERN_PARALYSIS_HELPER_RAM);
+    const battleMonSetRam = findModernParalysisBattleMonSetRam(rom, overlay);
+    const hookLocated = findModernParalysisHook(rom, overlay, MODERN_PARALYSIS_HELPER_RAM, battleMonSetRam);
     const hookState =
-      bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes)
-        ? "already"
-        : bytesEqualAny(rom, hookLocated.offset, MODERN_PARALYSIS_HOOK_ORIGINALS) || force
-          ? "patch"
+      bytesEqual(rom, hookLocated.offset, hookLocated.originalBytes)
+        ? "original"
+        : bytesEqual(rom, hookLocated.offset, hookLocated.hookBytes) || force
+          ? "restore"
           : null;
     if (hookState == null) {
       const found = Array.from(rom.slice(hookLocated.offset, hookLocated.offset + 4))
@@ -488,14 +465,11 @@
         writeBytes(rom, site.offset, site.patched);
       }
     }
-    if (helperState !== "already") {
-      writeBytes(rom, helperAt, helper);
-    }
     if (thunderWaveHelperState !== "already") {
       writeBytes(rom, thunderWaveHelperAt, thunderWaveHelper);
     }
-    if (hookState !== "already") {
-      writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
+    if (hookState === "restore") {
+      writeBytes(rom, hookLocated.offset, hookLocated.originalBytes);
     }
     if (thunderWaveHookState !== "already") {
       writeBytes(rom, thunderWaveHookLocated.offset, thunderWaveHookLocated.hookBytes);
@@ -504,9 +478,8 @@
     if (
       chanceState === "already" &&
       speedSites.every((site) => site.state === "already") &&
-      helperState === "already" &&
       thunderWaveHelperState === "already" &&
-      hookState === "already" &&
+      hookState === "original" &&
       thunderWaveHookState === "already"
     ) {
       log.push("Modern paralysis: already patched.");
@@ -520,8 +493,10 @@
     if (chanceLocated.skippedByModernFreeze) {
       notes.push("chance edit covered by Modern freeze hook");
     }
-    if (hookLocated.usedFallback) {
-      notes.push("status hook fallback scan");
+    if (hookState === "restore") {
+      notes.push("restored old status-write hook");
+    } else if (hookLocated.usedFallback) {
+      notes.push("status call fallback scan");
     }
     if (thunderWaveHookLocated.usedFallback) {
       notes.push("Thunder Wave hook fallback scan");
@@ -536,9 +511,9 @@
         .map((site) => hex(site.offset - overlay.start + 0xe))
         .join(" and +")}; Thunder Wave fails against Electric-type targets via overlay 16+${hex(
         thunderWaveHookLocated.offset - overlay.start
-      )}; compatibility hook at overlay 16+${hex(
+      )}; status write remains vanilla at overlay 16+${hex(
         hookLocated.offset - overlay.start
-      )}; helpers at ARM9 RAM ${hex(MODERN_PARALYSIS_HELPER_RAM)} and ${hex(MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM)}${
+      )} -> ${hex(battleMonSetRam)}; Thunder Wave helper at ARM9 RAM ${hex(MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM)}${
         notes.length ? ` (${notes.join(", ")})` : ""
       }.`
     );

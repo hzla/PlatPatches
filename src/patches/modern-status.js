@@ -29,7 +29,9 @@
     locateUniquePatch,
     replaceNarcMembers,
     replaceRomFile,
+    replaceRomFileAllowGrowth,
     narcMemberBytes,
+    asciiBytes,
   } = core;
 
   const BATTLE_SUB_SEQ_PATH = "battle/skill/sub_seq.narc";
@@ -212,6 +214,165 @@
   const MODERN_PARALYSIS_HELPER_RAM = 0x020f30b4;
   const MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM = 0x020f318c;
   const BATTLE_MON_SET_RAM_CANDIDATES = [0x022523e8, 0x022523f0];
+  const MODERN_PARALYSIS_AI_MARKER = "modern_para_ai_v1";
+  const MODERN_PARALYSIS_AI_HELPER_SIZE = 0x50;
+  const MODERN_PARALYSIS_AI_THUNDER_WAVE_ORIGINAL = bytesFromHex(`
+    29 00 00 00 00 00 00 00
+    13 00 00 00 4e 00 00 00 3d 05 00 00
+    13 00 00 00 0a 00 00 00 3a 05 00 00
+  `);
+  const AI_CMD_IF_LOADED_EQUAL_TO = 19;
+  const AI_CMD_LOAD_TYPE_FROM = 30;
+  const AI_CMD_LOAD_BATTLER_ABILITY = 41;
+  const AI_CMD_GO_TO = 76;
+  const AI_BATTLER_DEFENDER = 0;
+  const AI_LOAD_DEFENDER_TYPE_1 = 0;
+  const AI_LOAD_DEFENDER_TYPE_2 = 2;
+  const AI_TYPE_ELECTRIC = 13;
+  const AI_ABILITY_MOTOR_DRIVE = 78;
+  const AI_ABILITY_VOLT_ABSORB = 10;
+
+  function aiWord(value) {
+    const normalized = value >>> 0;
+    return [normalized & 0xff, (normalized >> 8) & 0xff, (normalized >> 16) & 0xff, normalized >> 24];
+  }
+
+  function aiReadS32(data, offset) {
+    return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) | 0;
+  }
+
+  function aiBranchOffset(fromOperandOffset, targetOffset) {
+    const distance = targetOffset - fromOperandOffset;
+    if (distance % 4 !== 0) {
+      throw new PatchError(
+        `Cannot encode trainer AI branch from member ${hex(fromOperandOffset)} to ${hex(targetOffset)}.`
+      );
+    }
+    return distance / 4 - 1;
+  }
+
+  function aiCommand(opcode, ...args) {
+    return args.reduce((bytes, arg) => bytes.concat(aiWord(arg)), aiWord(opcode));
+  }
+
+  function aiGoTo(commandOffset, targetOffset) {
+    return aiCommand(AI_CMD_GO_TO, aiBranchOffset(commandOffset + 4, targetOffset));
+  }
+
+  function aiIfLoadedEqualTo(commandOffset, value, targetOffset) {
+    return aiCommand(AI_CMD_IF_LOADED_EQUAL_TO, value, aiBranchOffset(commandOffset + 8, targetOffset));
+  }
+
+  function aiBranchTarget(fromOperandOffset, branchValue) {
+    return fromOperandOffset + (branchValue + 1) * 4;
+  }
+
+  function buildModernParalysisAiHelper(helperOffset, scoreMinus10Offset, resumeOffset) {
+    let cursor = helperOffset;
+    const parts = [];
+    function push(bytes) {
+      parts.push(bytes);
+      cursor += bytes.length;
+    }
+
+    push(aiCommand(AI_CMD_LOAD_TYPE_FROM, AI_LOAD_DEFENDER_TYPE_1));
+    push(aiIfLoadedEqualTo(cursor, AI_TYPE_ELECTRIC, scoreMinus10Offset));
+    push(aiCommand(AI_CMD_LOAD_TYPE_FROM, AI_LOAD_DEFENDER_TYPE_2));
+    push(aiIfLoadedEqualTo(cursor, AI_TYPE_ELECTRIC, scoreMinus10Offset));
+    push(aiCommand(AI_CMD_LOAD_BATTLER_ABILITY, AI_BATTLER_DEFENDER));
+    push(aiIfLoadedEqualTo(cursor, AI_ABILITY_MOTOR_DRIVE, scoreMinus10Offset));
+    push(aiIfLoadedEqualTo(cursor, AI_ABILITY_VOLT_ABSORB, scoreMinus10Offset));
+    push(aiGoTo(cursor, resumeOffset));
+
+    const helper = new Uint8Array(cursor - helperOffset);
+    let out = 0;
+    for (const part of parts) {
+      helper.set(part, out);
+      out += part.length;
+    }
+    if (helper.length !== MODERN_PARALYSIS_AI_HELPER_SIZE) {
+      throw new PatchError(
+        `Modern paralysis trainer AI helper size changed to ${hex(helper.length)}; update the marker locator.`
+      );
+    }
+    return helper;
+  }
+
+  function patchModernParalysisAi(rom, force, log) {
+    const file = findFileByPath(rom, TRAINER_AI_SEQ_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const member = narcMemberBytes(narc, 0);
+    const marker = asciiBytes(MODERN_PARALYSIS_AI_MARKER);
+    const existingMarkers = findNeedle(member, marker, 0, member.length);
+    const originalHits = findNeedle(
+      member,
+      MODERN_PARALYSIS_AI_THUNDER_WAVE_ORIGINAL,
+      0,
+      member.length
+    );
+
+    let patchAt = originalHits.length === 1 ? originalHits[0] : -1;
+    let helperOffset = -1;
+    if (existingMarkers.length) {
+      helperOffset = existingMarkers[existingMarkers.length - 1] - MODERN_PARALYSIS_AI_HELPER_SIZE;
+      if (helperOffset < 0) {
+        throw new PatchError("Modern paralysis trainer AI marker is too close to the start of the member.");
+      }
+      for (let offset = 0; offset <= member.length - 8; offset += 4) {
+        if (bytesEqual(member, offset, aiGoTo(offset, helperOffset))) {
+          patchAt = offset;
+          break;
+        }
+      }
+    }
+
+    if (patchAt < 0) {
+      if (originalHits.length > 1) {
+        throw new PatchError(
+          `Modern paralysis trainer AI Thunder Wave block matched multiple locations: ${originalHits
+            .map((offset) => `${TRAINER_AI_SEQ_PATH} member 0+${hex(offset)}`)
+            .join(", ")}.`
+        );
+      }
+      throw new PatchError("Modern paralysis trainer AI Thunder Wave block was not found.");
+    }
+
+    const resumeOffset = patchAt + MODERN_PARALYSIS_AI_THUNDER_WAVE_ORIGINAL.length;
+    const scoreMinus10Offset = existingMarkers.length
+      ? aiBranchTarget(helperOffset + 16, aiReadS32(member, helperOffset + 16))
+      : aiBranchTarget(patchAt + 28, aiReadS32(member, patchAt + 28));
+    const patchedMember = new Uint8Array(
+      existingMarkers.length ? member : member.length + MODERN_PARALYSIS_AI_HELPER_SIZE + marker.length
+    );
+    patchedMember.set(member);
+
+    if (!existingMarkers.length) {
+      helperOffset = member.length;
+      const helper = buildModernParalysisAiHelper(helperOffset, scoreMinus10Offset, resumeOffset);
+      patchedMember.set(helper, helperOffset);
+      patchedMember.set(marker, helperOffset + helper.length);
+    }
+
+    const patchedBranch = aiGoTo(patchAt, helperOffset);
+    if (!bytesEqual(patchedMember, patchAt, patchedBranch)) {
+      patchedMember.set(patchedBranch, patchAt);
+      patchedMember.fill(0x00, patchAt + patchedBranch.length, patchAt + MODERN_PARALYSIS_AI_THUNDER_WAVE_ORIGINAL.length);
+    }
+
+    if (bytesEqual(member, 0, patchedMember)) {
+      log.push("Modern paralysis trainer AI: already patched.");
+      return { rom, state: "already", growth: 0 };
+    }
+
+    const patchedNarc = replaceNarcMembers(narc, [[0, patchedMember]]);
+    const result = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Modern paralysis trainer AI");
+    log.push(
+      `Modern paralysis trainer AI: Thunder Wave scores like a failed status move against Electric-type targets in ${TRAINER_AI_SEQ_PATH} member 0+${hex(
+        patchAt
+      )}; helper at member 0+${hex(helperOffset)}${result.growth ? ` (ROM grew by ${result.growth} byte(s))` : ""}.`
+    );
+    return result;
+  }
 
   function buildModernParalysisThunderWaveHelper() {
     return bytesFromHex(`
@@ -474,16 +635,19 @@
     if (thunderWaveHookState !== "already") {
       writeBytes(rom, thunderWaveHookLocated.offset, thunderWaveHookLocated.hookBytes);
     }
+    const aiResult = patchModernParalysisAi(rom, force, log);
+    rom = aiResult.rom;
 
     if (
       chanceState === "already" &&
       speedSites.every((site) => site.state === "already") &&
       thunderWaveHelperState === "already" &&
       hookState === "original" &&
-      thunderWaveHookState === "already"
+      thunderWaveHookState === "already" &&
+      aiResult.state === "already"
     ) {
       log.push("Modern paralysis: already patched.");
-      return;
+      return rom;
     }
 
     const notes = [];
@@ -517,6 +681,7 @@
         notes.length ? ` (${notes.join(", ")})` : ""
       }.`
     );
+    return rom;
   }
 
   const MODERN_BURN_HOOK_REL = 0x1fb0e;

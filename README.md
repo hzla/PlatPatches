@@ -11,7 +11,7 @@ Included patches:
 - Critical hit odds, configurable as the base critical-hit divisor
 - Critical damage 1.5x
 - Remove EV gain
-- Modern paralysis mechanics: Thunder Wave fails on Electric-type targets, 12.5% full paralysis, and 50% Speed reduction
+- Modern paralysis mechanics: Thunder Wave fails on Electric-type targets, trainer AI avoids using Thunder Wave into Electric-type targets, 12.5% full paralysis, and 50% Speed reduction
 - Modern burn mechanics: Facade ignores burn's physical damage reduction, and burn chip damage is 1/16 max HP
 - Modern sleep mechanics: two-turn maximum with a 33% second-turn wake chance
 - Modern freeze mechanics: 25% thaw chance with a forced third-action thaw
@@ -53,7 +53,7 @@ Notes:
 - The framerate unlock patch skips the extra VBlank wait by preventing `gSystem.frameCounter` from being cleared in selected contexts. Battle-only mode installs a tiny ARM9 helper that mirrors the known battle cheat's overlay signature check; global mode applies the simpler main-loop edit everywhere. This is closer to 60 FPS than an emulator-style uncapped framerate.
 - The critical hit odds patch edits the base critical-hit rate divisor table in overlay 16. Vanilla is `1/16`; the UI defaults to `1/24`. This does not override the No critical hits patch, which stubs the critical-hit routine entirely.
 - The critical damage patch hooks the two battle damage multiplication sites so normal crits scale to `1.5x` instead of `2x`. Sniper crits scale from `3x` to `2.25x`.
-- The modern paralysis patch changes the full-paralysis turn-loss roll from `1/4` to `1/8`, changes the Speed penalty from `1/4` Speed to `1/2` Speed, and makes Thunder Wave use the normal no-effect path against Electric-type targets. Non-Electric paralysis effects such as Glare, Body Slam, and Static can still paralyze Electric-type battlers.
+- The modern paralysis patch changes the full-paralysis turn-loss roll from `1/4` to `1/8`, changes the Speed penalty from `1/4` Speed to `1/2` Speed, and makes Thunder Wave use the normal no-effect path against Electric-type targets. Its trainer AI edit mirrors existing failed-status scoring such as Will-O-Wisp into Fire types by scoring Thunder Wave poorly when the target is Electric type. Non-Electric paralysis effects such as Glare, Body Slam, and Static can still paralyze Electric-type battlers.
 - The modern burn patch hooks the physical damage burn reduction so move `0x0107` / Facade skips that halving, and changes residual burn damage from `1/8` max HP to `1/16` max HP. It does not change Guts or Facade's existing status power boost.
 - The modern sleep patch changes newly applied battle sleep from a random `2-4` counter to a fixed `3` counter, then hooks the battle sleep decrement path. That gives a guaranteed first asleep action, a roughly 33% wake chance on the second action, and a guaranteed wake on the third action.
 - The modern confusion patch leaves confusion duration alone, but changes the self-hit roll from `BattleSystem_RandNext & 1` to a one-third threshold check.
@@ -184,6 +184,8 @@ The DSPRE ARM9 expansion modifies NARC storage outside overlays: `data/weather_s
 Modern sleep also edits the battle script byte sequence for `subscript_fall_asleep`, changing `Random 3, 2` to `Random 1, 3` before `BATTLEMON_STATUS` is updated. Observed ROM offsets are `0x008BDC08` in pkaizo and `0x03960E00` in clean US Platinum.
 
 Modern burn also edits the battle script byte sequence for `subscript_burn_damage`, changing `DivideVarByValue BTLVAR_HP_CALC_TEMP, 8` to `DivideVarByValue BTLVAR_HP_CALC_TEMP, 16`. Observed divisor offsets are `0x008BEDC4` in pkaizo and `0x03961FBC` in clean US Platinum.
+
+Modern paralysis also edits `battle/tr_ai/tr_ai_seq.narc` member `0`. The Basic AI Thunder Wave cannot-paralyze branch is redirected to an appended helper marked `modern_para_ai_v1`; that helper checks defender type 1 and type 2 for Electric before preserving the existing Motor Drive, Volt Absorb, status, and Safeguard checks.
 
 Fairy type research credit: Mikelan98 and BagBoy, "Fairy Type in Pokemon Platinum" (`pokehacking.com/r/20071800`).
 

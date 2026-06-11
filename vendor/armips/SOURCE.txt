@@ -1,0 +1,31 @@
+armips WebAssembly vendor notes
+===============================
+
+Source:
+- Repository: https://github.com/Kingcom/armips
+- Commit: 9029577f6448c78dadcffbc876d2b8cbcfc6da9b
+- License: MIT, copied in LICENSE.txt
+
+Build toolchain:
+- Emscripten 5.0.7 from Homebrew
+- CMake + Ninja
+
+Build command:
+
+emcmake cmake -S /tmp/armips-migration -B /tmp/armips-wasm-single-build -GNinja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DARMIPS_USE_STD_FILESYSTEM=ON \
+  -DCMAKE_EXECUTABLE_SUFFIX=.js \
+  -DCMAKE_CXX_FLAGS='-fexceptions' \
+  -DCMAKE_EXE_LINKER_FLAGS='-fexceptions -sMODULARIZE=1 -sEXPORT_NAME=createArmipsModule -sEXPORTED_RUNTIME_METHODS=["callMain","FS","PATH"] -sFORCE_FILESYSTEM=1 -sINVOKE_RUN=0 -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=web,node -sWASM=1 -sSINGLE_FILE=1'
+
+cmake --build /tmp/armips-wasm-single-build --target armips-bin -j4
+
+Emscripten compatibility source edits:
+- Main/CommandLineInterface.cpp skips fs::absolute(inputFileName) when __EMSCRIPTEN__ is defined.
+- Core/Common.cpp keeps FileList relative paths and getFullPathName() relative when __EMSCRIPTEN__ is defined.
+- Core/Assembler.cpp sets Global.multiThreading = false when __EMSCRIPTEN__ is defined.
+
+Runtime note:
+- vendor/armips/armips.js is the single-file app runtime so index.html can still be opened directly from disk.
+- vendor/armips/armips.wasm is retained as the split build artifact from the same source/toolchain for inspection and rebuild comparison.

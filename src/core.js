@@ -652,6 +652,25 @@ class SyntheticOverlayAllocator {
     };
   }
 
+  async findExistingAsync(marker, buildPayload) {
+    const existing = this.markerOffsets(marker);
+    if (!existing.length) {
+      return null;
+    }
+
+    const markerOffset = existing[existing.length - 1];
+    const payloadRamAddress = this.ramAddress(markerOffset);
+    const built = await buildPayload(payloadRamAddress);
+    const payloadBytes = built.bytes || built;
+    return {
+      markerOffset,
+      payloadRamAddress,
+      built,
+      payloadBytes,
+      exact: bytesEqual(this.member, markerOffset, payloadBytes),
+    };
+  }
+
   allocate({ marker, buildPayload, label, alignment = 0x10, updateExisting = false }) {
     const existing = this.findExisting(marker, buildPayload);
     if (existing) {
@@ -693,6 +712,60 @@ class SyntheticOverlayAllocator {
 
     const payloadRamAddress = this.ramAddress(markerOffset);
     const built = buildPayload(payloadRamAddress);
+    const payloadBytes = built.bytes || built;
+    const patchedMember = new Uint8Array(this.member);
+    patchedMember.set(payloadBytes, markerOffset);
+    replaceSyntheticOverlayMember(this.rom, patchedMember);
+    this.member = patchedMember;
+    this.log.push(
+      `${label}: allocated synthetic-overlay payload at member ${hex(markerOffset)} / RAM ${hex(
+        payloadRamAddress
+      )}, ${hex(payloadBytes.length)} byte(s).`
+    );
+    return { markerOffset, payloadRamAddress, built, payloadBytes, reused: false };
+  }
+
+  async allocateAsync({ marker, buildPayload, label, alignment = 0x10, updateExisting = false }) {
+    const existing = await this.findExistingAsync(marker, buildPayload);
+    if (existing) {
+      if (existing.exact) {
+        this.log.push(
+          `${label}: reused existing synthetic-overlay payload at member ${hex(
+            existing.markerOffset
+          )} / RAM ${hex(existing.payloadRamAddress)}.`
+        );
+      } else if (updateExisting) {
+        const patchedMember = new Uint8Array(this.member);
+        if (existing.markerOffset + existing.payloadBytes.length > patchedMember.length) {
+          throw new PatchError(`${label} existing synthetic-overlay marker is too close to the end of the member.`);
+        }
+        patchedMember.set(existing.payloadBytes, existing.markerOffset);
+        replaceSyntheticOverlayMember(this.rom, patchedMember);
+        this.member = patchedMember;
+        this.log.push(
+          `${label}: updated existing synthetic-overlay payload at member ${hex(
+            existing.markerOffset
+          )} / RAM ${hex(existing.payloadRamAddress)}.`
+        );
+      } else {
+        this.log.push(
+          `${label}: found marker at member ${hex(
+            existing.markerOffset
+          )} / RAM ${hex(existing.payloadRamAddress)} and reused its addresses.`
+        );
+      }
+      return { ...existing, reused: true };
+    }
+
+    const provisional = await buildPayload(SYNTH_OVERLAY_RAM_BASE);
+    const provisionalBytes = provisional.bytes || provisional;
+    const markerOffset = findAlignedZeroRun(this.member, provisionalBytes.length, alignment);
+    if (markerOffset === -1) {
+      throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
+    }
+
+    const payloadRamAddress = this.ramAddress(markerOffset);
+    const built = await buildPayload(payloadRamAddress);
     const payloadBytes = built.bytes || built;
     const patchedMember = new Uint8Array(this.member);
     patchedMember.set(payloadBytes, markerOffset);

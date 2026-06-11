@@ -1,14 +1,23 @@
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = factory;
+    const assembler = require("../asm/armips-assembler.js");
+    const templates = require("../asm/templates.js");
+    module.exports = (core) => factory(core, assembler, templates);
   } else {
-    root.PlatinumPatcherSummaryScreenPatches = factory(root.PlatinumPatcherCore);
+    root.PlatinumPatcherSummaryScreenPatches = factory(
+      root.PlatinumPatcherCore,
+      root.PlatinumPatcherArmipsAssembler,
+      root.PlatinumPatcherAsmTemplates
+    );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (core, assembler, asmTemplates) {
   "use strict";
 
   if (!core) {
     throw new Error("Summary-screen patches require PlatinumPatcherCore to load first.");
+  }
+  if (!assembler || !asmTemplates) {
+    throw new Error("armips assembler failed to load for summary-screen patches.");
   }
 
   const {
@@ -32,19 +41,6 @@
     { ram: 0x02090ae4, original: bytesFromHex("ff f7 f8 fa") },
   ];
 
-  const HELPER_TEMPLATE = bytesFromHex(`
-    f0 b5 81 b0 04 46 0d 46 1f 46 91 20 80 00 20 58
-    29 1a 09 09 00 26 01 29 01 d1 01 26 0e e0 02 29
-    01 d1 02 26 0a e0 03 29 01 d1 04 26 06 e0 04 29
-    01 d1 05 26 02 e0 05 29 0b d1 03 26 a1 20 80 00
-    01 38 20 5c 31 46 00 00 00 00 01 28 05 d0 00 28
-    01 d4 06 4a 02 e0 06 4a 00 e0 06 4a 20 46 29 46
-    3b 46 00 00 00 00 01 b0 f0 bd c0 46 00 02 01 00
-    00 04 03 00 00 06 05 00
-  `);
-
-  const AFFINITY_BL_OFFSET = 0x46;
-  const PRINT_BL_OFFSET = 0x62;
   const POKEMON_GET_STAT_AFFINITY_OF = 0x02075c60;
   const PRINT_STRING_TO_WINDOW = 0x020900d8;
 
@@ -58,14 +54,20 @@
     return [first & 0xff, first >> 8, second & 0xff, second >> 8];
   }
 
-  function buildNatureStatColorPayload(payloadAddress) {
+  async function buildNatureStatColorPayload(payloadAddress) {
     const helperAddress = payloadAddress + MARKER.length;
-    const helper = new Uint8Array(HELPER_TEMPLATE);
-    helper.set(
-      thumbBl(helperAddress + AFFINITY_BL_OFFSET, POKEMON_GET_STAT_AFFINITY_OF),
-      AFFINITY_BL_OFFSET
-    );
-    helper.set(thumbBl(helperAddress + PRINT_BL_OFFSET, PRINT_STRING_TO_WINDOW), PRINT_BL_OFFSET);
+    let helper;
+    try {
+      helper = await assembler.assembleArmips({
+        source: asmTemplates.natureStatColorsHelper({
+          helperAddress,
+          pokemonGetStatAffinityOfAddress: POKEMON_GET_STAT_AFFINITY_OF,
+          printStringToWindowAddress: PRINT_STRING_TO_WINDOW,
+        }),
+      });
+    } catch (error) {
+      throw new PatchError(`Nature stat colors armips helper assembly failed: ${error.message}`);
+    }
 
     const bytes = new Uint8Array(MARKER.length + helper.length);
     bytes.set(MARKER);
@@ -73,9 +75,9 @@
     return { bytes, entryAddress: helperAddress };
   }
 
-  function patchNatureStatColors(rom, force, log) {
+  async function patchNatureStatColors(rom, force, log) {
     const allocator = new SyntheticOverlayAllocator(rom, log);
-    const allocation = allocator.allocate({
+    const allocation = await allocator.allocateAsync({
       marker: "NATSTATCOLOR1",
       buildPayload: buildNatureStatColorPayload,
       label: "Nature stat colors",

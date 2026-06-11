@@ -1,14 +1,23 @@
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = factory;
+    const assembler = require("../asm/armips-assembler.js");
+    const templates = require("../asm/templates.js");
+    module.exports = (core) => factory(core, assembler, templates);
   } else {
-    root.PlatinumPatcherItemRenewalPatch = factory(root.PlatinumPatcherCore);
+    root.PlatinumPatcherItemRenewalPatch = factory(
+      root.PlatinumPatcherCore,
+      root.PlatinumPatcherArmipsAssembler,
+      root.PlatinumPatcherAsmTemplates
+    );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (core, assembler, asmTemplates) {
   "use strict";
 
   if (!core) {
     throw new Error("Item Renewal patch requires PlatinumPatcherCore to load first.");
+  }
+  if (!assembler || !asmTemplates) {
+    throw new Error("armips assembler failed to load for Item Renewal patch.");
   }
 
   const {
@@ -39,8 +48,8 @@
     return [first & 0xff, first >> 8, second & 0xff, second >> 8];
   }
 
-  function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
-    return new SyntheticOverlayAllocator(rom, log).allocate({
+  async function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
+    return new SyntheticOverlayAllocator(rom, log).allocateAsync({
       marker,
       buildPayload,
       label,
@@ -79,55 +88,48 @@
   const ITEM_RENEWAL_END_ORIGINAL = bytesFromHex("70 b5 06 1c");
   const ITEM_RENEWAL_FINAL_ORIGINAL = bytesFromHex("2c 20 a8 60");
   const ITEM_RENEWAL_WRITEBACK_ORIGINAL = bytesFromHex("70 78 00 07");
-  const ITEM_RENEWAL_WRITEBACK_TEMPLATE = bytesFromHex(`
-    30 b5 04 9d 65 20 80 00 2d 18 6d 78 70 78 00 07
-    00 0f ff f7 fe ff 04 1c b1 68 01 43 b1 60 b2 89
-    00 2a 0e d1 03 98 ff f7 fe ff 71 21 89 00 2a 1c
-    01 23 1a 40 d2 00 89 18 42 58 23 1c db 05 1a 43
-    42 50 70 78 00 07 30 bd
-  `);
   const ITEM_RENEWAL_PARTY_HELD_ITEM_ORIGINAL = bytesFromHex("e0 83 60 68");
-  const ITEM_RENEWAL_PARTY_HELD_ITEM_TEMPLATE = bytesFromHex(`
-    ee b5 07 1c 07 9e 36 68 b0 68 ff f7 fe ff 05 1c
-    09 98 31 1c 2c 31 08 5c 06 28 0e d2 ff f7 fe ff
-    71 21 89 00 b2 6a 01 23 1a 40 d2 00 89 18 6a 58
-    03 1c db 05 1a 42 00 d0 00 27 e7 83 60 68 ee bd
-  `);
   const FLAG_INDEX_RAM = 0x020787cc;
   const BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM = 0x0223df10;
 
-  function patchArrayBl(out, offset, fromAddress, toAddress) {
-    const bytes = thumbBl(fromAddress, toAddress);
-    out[offset] = bytes[0];
-    out[offset + 1] = bytes[1];
-    out[offset + 2] = bytes[2];
-    out[offset + 3] = bytes[3];
+  async function assembleItemRenewalHelper(label, source) {
+    try {
+      return await assembler.assembleArmips({ source });
+    } catch (error) {
+      throw new PatchError(`${label} armips helper assembly failed: ${error.message}`);
+    }
   }
 
-  function buildItemRenewalPayload(payloadRamAddress) {
+  async function buildItemRenewalPayload(payloadRamAddress) {
     const out = Array.from(asciiBytes(ITEM_RENEWAL_MARKER));
     while (out.length % 2 !== 0) {
       out.push(0);
     }
     const codeOffset = out.length;
-    out.push(...ITEM_RENEWAL_WRITEBACK_TEMPLATE);
+    const helperRam = payloadRamAddress + codeOffset;
+    const writebackHelper = await assembleItemRenewalHelper(
+      "Item Renewal writeback",
+      asmTemplates.itemRenewalWritebackHelper({
+        helperAddress: helperRam,
+        flagIndexAddress: FLAG_INDEX_RAM,
+        battleSystemGetBattleContextAddress: BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM,
+      })
+    );
+    out.push(...writebackHelper);
     while (out.length % 2 !== 0) {
       out.push(0);
     }
     const partyHeldItemOffset = out.length;
-    out.push(...ITEM_RENEWAL_PARTY_HELD_ITEM_TEMPLATE);
-
-    const helperRam = payloadRamAddress + codeOffset;
-    patchArrayBl(out, codeOffset + 0x12, helperRam + 0x12, FLAG_INDEX_RAM);
-    patchArrayBl(out, codeOffset + 0x26, helperRam + 0x26, BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM);
     const partyHeldItemHelperRam = payloadRamAddress + partyHeldItemOffset;
-    patchArrayBl(
-      out,
-      partyHeldItemOffset + 0x0a,
-      partyHeldItemHelperRam + 0x0a,
-      BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM
+    const partyHeldItemHelper = await assembleItemRenewalHelper(
+      "Item Renewal party held-item",
+      asmTemplates.itemRenewalPartyHeldItemHelper({
+        helperAddress: partyHeldItemHelperRam,
+        flagIndexAddress: FLAG_INDEX_RAM,
+        battleSystemGetBattleContextAddress: BATTLE_SYSTEM_GET_BATTLE_CONTEXT_RAM,
+      })
     );
-    patchArrayBl(out, partyHeldItemOffset + 0x1c, partyHeldItemHelperRam + 0x1c, FLAG_INDEX_RAM);
+    out.push(...partyHeldItemHelper);
 
     return {
       bytes: new Uint8Array(out),
@@ -135,7 +137,7 @@
       helperRam,
       partyHeldItemOffset,
       partyHeldItemHelperRam,
-      codeSize: ITEM_RENEWAL_WRITEBACK_TEMPLATE.length,
+      codeSize: writebackHelper.length,
     };
   }
 
@@ -359,8 +361,8 @@
     return migrated.length;
   }
 
-  function patchItemRenewal(rom, force, log) {
-    const allocation = allocateSyntheticPayload(
+  async function patchItemRenewal(rom, force, log) {
+    const allocation = await allocateSyntheticPayload(
       rom,
       ITEM_RENEWAL_MARKER,
       buildItemRenewalPayload,

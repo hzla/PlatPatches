@@ -718,7 +718,7 @@
     { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
   ]);
 
-  function applySelectedPatches(inputBytes, patchIds, options = {}) {
+  async function applySelectedPatches(inputBytes, patchIds, options = {}) {
     let rom = new Uint8Array(inputBytes);
     const log = [];
     const debugFairyBattleTest = Boolean(options.debugFairyBattleTest);
@@ -762,7 +762,7 @@
       if (!patch) {
         throw new PatchError(`Unknown patch: ${patchId}`);
       }
-      const patchResult = patch(rom, Boolean(options.force), log, options);
+      const patchResult = await patch(rom, Boolean(options.force), log, options);
       if (patchResult instanceof Uint8Array) {
         rom = patchResult;
       }

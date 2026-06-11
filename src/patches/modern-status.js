@@ -1,14 +1,23 @@
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = factory;
+    const assembler = require("../asm/armips-assembler.js");
+    const templates = require("../asm/templates.js");
+    module.exports = (core) => factory(core, assembler, templates);
     return;
   }
-  root.PlatinumPatcherModernStatusPatches = factory(root.PlatinumPatcherCore);
-})(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
+  root.PlatinumPatcherModernStatusPatches = factory(
+    root.PlatinumPatcherCore,
+    root.PlatinumPatcherArmipsAssembler,
+    root.PlatinumPatcherAsmTemplates
+  );
+})(typeof globalThis !== "undefined" ? globalThis : this, function (core, assembler, asmTemplates) {
   "use strict";
 
   if (!core) {
     throw new Error("PlatinumPatcherCore failed to load for modern-status patches.");
+  }
+  if (!assembler || !asmTemplates) {
+    throw new Error("armips assembler failed to load for modern-status patches.");
   }
 
   const {
@@ -374,14 +383,19 @@
     return result;
   }
 
-  function buildModernParalysisThunderWaveHelper() {
-    return bytesFromHex(`
-      0c 49 60 50 0c 4a a2 58 56 2a 12 d1 e2 6e c0 23
-      5a 43 0a 4b a2 18 d0 5c 0d 28 03 d0 01 33 d0 5c
-      0d 28 06 d1 06 4a a0 58 06 23 98 43 08 23 18 43
-      a0 50 70 47 44 21 00 00 44 30 00 00 64 2d 00 00
-      6c 21 00 00
-    `);
+  async function assembleModernStatusHelper(label, source) {
+    try {
+      return await assembler.assembleArmips({ source });
+    } catch (error) {
+      throw new PatchError(`${label} armips helper assembly failed: ${error.message}`);
+    }
+  }
+
+  async function buildModernParalysisThunderWaveHelper(helperAddress) {
+    return assembleModernStatusHelper(
+      "Modern paralysis Thunder Wave",
+      asmTemplates.modernParalysisThunderWaveHelper({ helperAddress })
+    );
   }
 
   function modernParalysisHook(fromAddress, helperAddress) {
@@ -503,7 +517,7 @@
     return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
   }
 
-  function patchModernParalysis(rom, force, log) {
+  async function patchModernParalysis(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
     const freezeHookActive = isModernFreezeHookActive(rom, overlay);
     let chanceLocated = {
@@ -552,7 +566,9 @@
       return { ...site, ...located, state };
     });
 
-    const thunderWaveHelper = buildModernParalysisThunderWaveHelper();
+    const thunderWaveHelper = await buildModernParalysisThunderWaveHelper(
+      MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM
+    );
     const thunderWaveHelperAt = arm9Offset(
       rom,
       MODERN_PARALYSIS_THUNDER_WAVE_HELPER_RAM,
@@ -690,11 +706,6 @@
     41 18 48 10 21 90
   `);
   const MODERN_BURN_HELPER_RAM = 0x020f3168;
-  const MODERN_BURN_HELPER = bytesFromHex(`
-    12 98 10 21 08 42 0c d0 3e 2f 0a d0 02 98 83 21
-    49 00 01 31 88 42 04 d0 21 98 c1 0f 41 18 48 10
-    21 90 70 47
-  `);
   const MODERN_BURN_DAMAGE_ORIGINAL = bytesFromHex(`
     55 00 00 00 20 00 00 00 08 00 00 00 37 00 00 00
     01 00 00 00 ff 00 00 00 55 00 00 00 03 00 00 00
@@ -751,7 +762,14 @@
     return { ...located, offset: file.start + located.offset, file, fileRelativeOffset: located.offset };
   }
 
-  function patchModernBurn(rom, force, log) {
+  async function buildModernBurnHelper(helperAddress) {
+    return assembleModernStatusHelper(
+      "Modern burn",
+      asmTemplates.modernBurnHelper({ helperAddress })
+    );
+  }
+
+  async function patchModernBurn(rom, force, log) {
     const overlay = getOverlayRange(rom, OVERLAY_16);
     const burnDamage = locateBattleSubSeqPatch(
       rom,
@@ -759,13 +777,14 @@
       MODERN_BURN_DAMAGE_PATCHED,
       "Modern burn residual damage divisor"
     );
-    const helperAt = arm9Offset(rom, MODERN_BURN_HELPER_RAM, MODERN_BURN_HELPER.length);
-    const helperExpected = new Uint8Array(MODERN_BURN_HELPER.length).fill(0x00);
+    const helper = await buildModernBurnHelper(MODERN_BURN_HELPER_RAM);
+    const helperAt = arm9Offset(rom, MODERN_BURN_HELPER_RAM, helper.length);
+    const helperExpected = new Uint8Array(helper.length).fill(0x00);
     const helperState = requireBytes(
       rom,
       helperAt,
       helperExpected,
-      MODERN_BURN_HELPER,
+      helper,
       force,
       "Modern burn Facade helper"
     );
@@ -784,7 +803,7 @@
     }
 
     if (helperState !== "already") {
-      writeBytes(rom, helperAt, MODERN_BURN_HELPER);
+      writeBytes(rom, helperAt, helper);
     }
     if (!hookAlready) {
       writeBytes(rom, hookLocated.offset, hookLocated.hookBytes);
@@ -827,15 +846,14 @@
   const MODERN_SLEEP_HELPER_RAM = 0x020f321c;
   const BATTLE_SYSTEM_RAND_NEXT_RAM = 0x0223f4bc;
 
-  function buildModernSleepHelper(helperAddress) {
-    const helper = bytesFromHex(`
-      1c b5 0d 4b d4 58 07 20 20 40 03 28 00 d9 03 20
-      01 38 01 28 08 d1 0a 98 ff f7 fe ff 07 49 88 42
-      01 d2 00 20 00 e0 01 20 07 21 8c 43 04 43 00 9a
-      01 4b d4 50 21 1c 1c bd b0 2d 00 00 55 55 00 00
-    `);
-    helper.set(thumbBl(helperAddress + 0x18, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x18);
-    return helper;
+  async function buildModernSleepHelper(helperAddress) {
+    return assembleModernStatusHelper(
+      "Modern sleep",
+      asmTemplates.modernSleepHelper({
+        helperAddress,
+        battleSystemRandNextAddress: BATTLE_SYSTEM_RAND_NEXT_RAM,
+      })
+    );
   }
 
   function modernSleepHook(fromAddress, helperAddress) {
@@ -873,7 +891,7 @@
     return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
   }
 
-  function patchModernSleep(rom, force, log) {
+  async function patchModernSleep(rom, force, log) {
     const sleepDuration = locateBattleSubSeqPatch(
       rom,
       MODERN_SLEEP_DURATION_ORIGINAL,
@@ -881,7 +899,7 @@
       "Modern sleep battle-script duration command"
     );
 
-    const helper = buildModernSleepHelper(MODERN_SLEEP_HELPER_RAM);
+    const helper = await buildModernSleepHelper(MODERN_SLEEP_HELPER_RAM);
     const helperAt = arm9Offset(rom, MODERN_SLEEP_HELPER_RAM, helper.length);
     const helperExpected = new Uint8Array(helper.length).fill(0x00);
     const helperState = requireBytes(
@@ -948,15 +966,14 @@
   const MODERN_FREEZE_HELPER_SEARCH_START_RAM = 0x020f3300;
   const MODERN_FREEZE_HELPER_SEARCH_END_RAM = 0x020f3800;
 
-  function buildModernFreezeHelper(helperAddress) {
-    const helper = bytesFromHex(`
-      10 b5 0c 1c 62 6e c0 21 4a 43 09 49 89 18 09 19
-      0a 88 01 32 0a 80 03 2a 06 d2 ff f7 fe ff 03 21
-      08 42 01 d0 01 20 10 bd 00 22 0a 80 00 20 10 bd
-      ba 2d 00 00
-    `);
-    helper.set(thumbBl(helperAddress + 0x1a, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x1a);
-    return helper;
+  async function buildModernFreezeHelper(helperAddress) {
+    return assembleModernStatusHelper(
+      "Modern freeze",
+      asmTemplates.modernFreezeHelper({
+        helperAddress,
+        battleSystemRandNextAddress: BATTLE_SYSTEM_RAND_NEXT_RAM,
+      })
+    );
   }
 
   function modernFreezeHook(fromAddress, helperAddress) {
@@ -1044,12 +1061,12 @@
     return { helperAt, helperRamAddress, helperUsedFallback };
   }
 
-  function patchModernFreeze(rom, force, log) {
-    const preferredHelper = buildModernFreezeHelper(MODERN_FREEZE_HELPER_RAM);
+  async function patchModernFreeze(rom, force, log) {
+    const preferredHelper = await buildModernFreezeHelper(MODERN_FREEZE_HELPER_RAM);
     let { helperAt, helperRamAddress, helperUsedFallback } = resolveModernFreezeHelperCave(rom, preferredHelper);
-    const helper = helperRamAddress === MODERN_FREEZE_HELPER_RAM
+    let helper = helperRamAddress === MODERN_FREEZE_HELPER_RAM
       ? preferredHelper
-      : buildModernFreezeHelper(helperRamAddress);
+      : await buildModernFreezeHelper(helperRamAddress);
     if (helperRamAddress !== MODERN_FREEZE_HELPER_RAM) {
       ({ helperAt, helperRamAddress, helperUsedFallback } = resolveModernFreezeHelperCave(rom, helper));
     }
@@ -1110,13 +1127,14 @@
   `);
   const MODERN_CONFUSION_HELPER_RAM = 0x020f3260;
 
-  function buildModernConfusionHelper(helperAddress) {
-    const helper = bytesFromHex(`
-      00 b5 ff f7 fe ff 02 49 88 42 01 d2 00 20 00 bd
-      01 20 00 bd 55 55 00 00
-    `);
-    helper.set(thumbBl(helperAddress + 0x2, BATTLE_SYSTEM_RAND_NEXT_RAM), 0x2);
-    return helper;
+  async function buildModernConfusionHelper(helperAddress) {
+    return assembleModernStatusHelper(
+      "Modern confusion",
+      asmTemplates.modernConfusionHelper({
+        helperAddress,
+        battleSystemRandNextAddress: BATTLE_SYSTEM_RAND_NEXT_RAM,
+      })
+    );
   }
 
   function modernConfusionHook(fromAddress, helperAddress) {
@@ -1161,8 +1179,8 @@
     return { offset: preferred, usedFallback: false, hookBytes: preferredHook };
   }
 
-  function patchModernConfusion(rom, force, log) {
-    const helper = buildModernConfusionHelper(MODERN_CONFUSION_HELPER_RAM);
+  async function patchModernConfusion(rom, force, log) {
+    const helper = await buildModernConfusionHelper(MODERN_CONFUSION_HELPER_RAM);
     const helperAt = arm9Offset(rom, MODERN_CONFUSION_HELPER_RAM, helper.length);
     const helperExpected = new Uint8Array(helper.length).fill(0x00);
     const helperState = requireBytes(

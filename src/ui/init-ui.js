@@ -449,7 +449,7 @@ function initUi() {
     }
   });
 
-  applyButton.addEventListener("click", () => {
+  applyButton.addEventListener("click", async () => {
     clearDownload();
     if (!loadedBytes || !loadedFile) {
       setLog("Choose a ROM first.");
@@ -457,9 +457,10 @@ function initUi() {
     }
 
     const ids = selectedPatches();
+    applyButton.disabled = true;
     try {
       const options = patchOptions();
-      const result = applySelectedPatches(loadedBytes, ids, options);
+      const result = await applySelectedPatches(loadedBytes, ids, options);
       const blob = new Blob([result.rom], { type: "application/octet-stream" });
       downloadUrl = URL.createObjectURL(blob);
       downloadLink.href = downloadUrl;
@@ -480,6 +481,8 @@ function initUi() {
     } catch (error) {
       const label = error instanceof PatchError ? "Patch error" : "Error";
       setLog(`${label}: ${error.message}`);
+    } finally {
+      applyButton.disabled = false;
     }
   });
 }

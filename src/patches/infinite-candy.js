@@ -1,14 +1,25 @@
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = factory;
+    const assembler = require("../asm/armips-assembler.js");
+    const templates = require("../asm/templates.js");
+    module.exports = (core, deps) => factory(core, deps, assembler, templates);
   } else {
-    root.PlatinumPatcherInfiniteCandyPatch = factory;
+    root.PlatinumPatcherInfiniteCandyPatch = (core, deps) =>
+      factory(
+        core,
+        deps,
+        root.PlatinumPatcherArmipsAssembler,
+        root.PlatinumPatcherAsmTemplates
+      );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (core, deps) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (core, deps, assembler, asmTemplates) {
   "use strict";
 
   if (!core) {
     throw new Error("Infinite Candy patch requires PlatinumPatcherCore to load first.");
+  }
+  if (!assembler || !asmTemplates) {
+    throw new Error("armips assembler failed to load for Infinite Candy patch.");
   }
 
   const {
@@ -38,19 +49,6 @@
   } = core;
   const { patchArm9Expansion } = deps || {};
 
-function thumbInst16(value) {
-  return [value & 0xff, (value >>> 8) & 0xff];
-}
-
-function thumbB(fromAddress, toAddress) {
-  const offset = toAddress - (fromAddress + 4);
-  if (offset % 2 !== 0 || offset < -2048 || offset > 2046) {
-    throw new PatchError(`Cannot encode Thumb B from ${hex(fromAddress)} to ${hex(toAddress)}.`);
-  }
-  const imm11 = (offset >> 1) & 0x7ff;
-  return thumbInst16(0xe000 | imm11);
-}
-
 function thumbBl(fromAddress, toAddress) {
   const offset = toAddress - (fromAddress + 4);
   if (offset % 2 !== 0 || offset < -0x400000 || offset > 0x3ffffe) {
@@ -59,14 +57,6 @@ function thumbBl(fromAddress, toAddress) {
   const first = 0xf000 | ((offset >> 12) & 0x7ff);
   const second = 0xf800 | ((offset >> 1) & 0x7ff);
   return [first & 0xff, first >> 8, second & 0xff, second >> 8];
-}
-
-function thumbCondBranch(fromAddress, toAddress, condition) {
-  const offset = toAddress - (fromAddress + 4);
-  if (offset % 2 !== 0 || offset < -256 || offset > 254) {
-    throw new PatchError(`Cannot encode Thumb conditional branch from ${hex(fromAddress)} to ${hex(toAddress)}.`);
-  }
-  return thumbInst16(0xd000 | (condition << 8) | ((offset >> 1) & 0xff));
 }
 
 function decodeThumbBl(fromAddress, bytes, offset) {
@@ -102,17 +92,14 @@ const BAG_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d61c;
 const BAG_TRY_REMOVE_ITEM_SLOT_RAM = 0x0207d5e8;
 const POCKET_TRY_REMOVE_ITEM_RESUME_RAM = 0x0207d664;
 const POCKET_TRY_REMOVE_ITEM_COUNT_RAM = 0x0207d5b8;
+const BAG_CAN_REMOVE_ITEM_RAM = 0x0207d688;
+const WINDOW_ERASE_MESSAGE_BOX_RAM = 0x0200e084;
+const PARTY_MENU_PRINT_TO_WINDOW32_RAM = 0x020826e0;
 const BAG_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("f0 b5 83 b0 06 1c 0f 1c 15 1c 1c 1c");
 const POCKET_TRY_REMOVE_ITEM_EXPECTED = bytesFromHex("70 b5 05 1c 0e 1c 1c 1c ff f7 aa ff");
 
 function emitU32(out, value) {
   out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
-}
-
-function literalJump(targetAddress) {
-  const out = [0x00, 0x4b, 0x18, 0x47];
-  emitU32(out, targetAddress | 1);
-  return new Uint8Array(out);
 }
 
 function literalJumpPreserveR3(targetAddress) {
@@ -158,140 +145,63 @@ function decodeLiteralJumpPreserveR3(data, offset) {
   return readU32(data, offset + 8) & ~1;
 }
 
-function emitRedChainItemIdR1(emit16) {
-  emit16(0x21dd); // mov r1, #0xdd
-  emit16(0x0049); // lsl r1, r1, #1
-  emit16(0x3901); // sub r1, #1, yielding item ID 441
+async function assembleInfiniteCandyHelper(label, source) {
+  try {
+    return await assembler.assembleArmips({ source });
+  } catch (error) {
+    throw new PatchError(`${label} armips helper assembly failed: ${error.message}`);
+  }
 }
 
-function buildChainCandyPayload(payloadRamAddress) {
+async function buildChainCandyPayload(payloadRamAddress) {
   const out = Array.from(asciiBytes(CHAIN_CANDY_MARKER));
   while (out.length % 2 !== 0) {
     out.push(0);
   }
-  const fixups = [];
-
-  function here() {
-    return payloadRamAddress + out.length;
-  }
-  function emit(bytes) {
-    out.push(...bytes);
-  }
-  function emit16(value) {
-    emit(thumbInst16(value));
-  }
-  function branch(name) {
-    fixups.push({ offset: out.length, at: here(), name, type: "branch" });
-    emit16(0xe000);
-  }
-  function cond(name, condition) {
-    fixups.push({ offset: out.length, at: here(), name, type: "cond", condition });
-    emit16(0xd000 | (condition << 8));
-  }
-  const labels = new Map();
-  function label(name) {
-    labels.set(name, here());
-  }
-
-  label("hook");
-  emit16(0xb520); // push {r5, lr}
-  emit16(0x7008); // strb r0, [r1]
-  emit16(0x2800); // cmp r0, #0
-  cond("exit", 0x1); // bne
-  emit16(0x20b4); // mov r0, #0xb4
-  emit16(0x00c0); // lsl r0, r0, #3
-  emit16(0x3004); // add r0, #4
-  emit16(0x1821); // add r1, r4, r0
-  emit16(0x680d); // ldr r5, [r1]
-  emit16(0x6868); // ldr r0, [r5, #4]
-  emitRedChainItemIdR1(emit16);
-  emit16(0x2201); // mov r2, #1
-  emit16(0x230c); // mov r3, #12
-  emit(thumbBl(here(), 0x0207d688)); // Bag_CanRemoveItem
-  emit16(0x2800); // cmp r0, #0
-  cond("exit", 0x0); // beq
-  emitRedChainItemIdR1(emit16);
-  emit16(0x2024); // mov r0, #36
-  emit16(0x1828); // add r0, r5, r0
-  emit16(0x8001); // strh r1, [r0]
-  emit16(0x1c20); // mov r0, r4
-  emit16(0x2189); // mov r1, #0x89
-  emit16(0x0089); // lsl r1, r1, #2
-  emit16(0x1840); // add r0, r0, r1
-  emit16(0x2100); // mov r1, #0
-  emit(thumbBl(here(), 0x0200e084)); // Window_EraseMessageBox
-  emit16(0x1c20); // mov r0, r4
-  emit16(0x2120); // mov r1, #32
-  emit16(0x2201); // mov r2, #1
-  emit(thumbBl(here(), 0x020826e0)); // PartyMenu_PrintToWindow32
-  emit16(0x2004); // mov r0, #4
-  emit16(0xbd20); // pop {r5, pc}
-  label("exit");
-  emit16(0x2020); // mov r0, #0x20
-  emit16(0xbd20); // pop {r5, pc}
-  branch("end");
-  while (out.length % 4 !== 0) {
-    out.push(0);
-  }
-  label("end");
-
-  for (const fixup of fixups) {
-    const target = labels.get(fixup.name);
-    if (target == null) {
-      throw new Error(`internal chain candy label not found: ${fixup.name}`);
-    }
-    const bytes =
-      fixup.type === "cond"
-        ? thumbCondBranch(fixup.at, target, fixup.condition)
-        : thumbB(fixup.at, target);
-    out[fixup.offset] = bytes[0];
-    out[fixup.offset + 1] = bytes[1];
-  }
+  const helperRam = payloadRamAddress + out.length;
+  const helper = await assembleInfiniteCandyHelper(
+    "Infinite Candy chain",
+    asmTemplates.infiniteCandyChainHelper({
+      helperAddress: helperRam,
+      bagCanRemoveItemAddress: BAG_CAN_REMOVE_ITEM_RAM,
+      windowEraseMessageBoxAddress: WINDOW_ERASE_MESSAGE_BOX_RAM,
+      partyMenuPrintToWindow32Address: PARTY_MENU_PRINT_TO_WINDOW32_RAM,
+    })
+  );
+  out.push(...helper);
 
   return new Uint8Array(out);
 }
 
-function buildInfiniteCandyPayload(payloadRamAddress) {
+async function buildInfiniteCandyPayload(payloadRamAddress) {
   const out = Array.from(asciiBytes(INFINITE_CANDY_MARKER));
   while (out.length % 4 !== 0) {
     out.push(0);
   }
   const bagHelperOffset = out.length;
-  out.push(
-    0x08, 0xbc, // pop {r3}, undoing the hook trampoline's save
-    0x01, 0xb4, // push {r0}
-    0xdd, 0x20, // mov r0, #0xdd
-    0x40, 0x00, // lsl r0, r0, #1
-    0x01, 0x38, // sub r0, #1, yielding item ID 441
-    0x81, 0x42, // cmp r1, r0
-    0x01, 0xbc, // pop {r0}
-    0x01, 0xd1, // bne normal
-    0x01, 0x20, // mov r0, #1
-    0x70, 0x47 // bx lr
+  const bagHelper = await assembleInfiniteCandyHelper(
+    "Infinite Candy Bag_TryRemoveItem",
+    asmTemplates.infiniteCandyBagRemovalHelper({
+      helperAddress: payloadRamAddress + bagHelperOffset,
+      bagTryRemoveItemSlotAddress: BAG_TRY_REMOVE_ITEM_SLOT_RAM,
+      bagTryRemoveItemResumeAddress: BAG_TRY_REMOVE_ITEM_RESUME_RAM,
+    })
   );
-  out.push(...BAG_TRY_REMOVE_ITEM_EXPECTED);
-  out.push(...thumbBl(payloadRamAddress + out.length, BAG_TRY_REMOVE_ITEM_SLOT_RAM));
-  out.push(...literalJump(BAG_TRY_REMOVE_ITEM_RESUME_RAM));
+  out.push(...bagHelper);
 
   while (out.length % 4 !== 0) {
     out.push(0);
   }
   const pocketHelperOffset = out.length;
-  out.push(
-    0x08, 0xbc, // pop {r3}, undoing the hook trampoline's save
-    0x01, 0xb4, // push {r0}
-    0xdd, 0x20, // mov r0, #0xdd
-    0x40, 0x00, // lsl r0, r0, #1
-    0x01, 0x38, // sub r0, #1, yielding item ID 441
-    0x82, 0x42, // cmp r2, r0
-    0x01, 0xbc, // pop {r0}
-    0x01, 0xd1, // bne normal
-    0x01, 0x20, // mov r0, #1
-    0x70, 0x47 // bx lr
+  const pocketHelper = await assembleInfiniteCandyHelper(
+    "Infinite Candy Pocket_TryRemoveItem",
+    asmTemplates.infiniteCandyPocketRemovalHelper({
+      helperAddress: payloadRamAddress + pocketHelperOffset,
+      pocketTryRemoveItemCountAddress: POCKET_TRY_REMOVE_ITEM_COUNT_RAM,
+      pocketTryRemoveItemResumeAddress: POCKET_TRY_REMOVE_ITEM_RESUME_RAM,
+    })
   );
-  out.push(...POCKET_TRY_REMOVE_ITEM_EXPECTED.slice(0, 8));
-  out.push(...thumbBl(payloadRamAddress + out.length, POCKET_TRY_REMOVE_ITEM_COUNT_RAM));
-  out.push(...literalJump(POCKET_TRY_REMOVE_ITEM_RESUME_RAM));
+  out.push(...pocketHelper);
 
   return {
     bytes: new Uint8Array(out),
@@ -306,8 +216,8 @@ function synthMarkerOffsets(member, marker) {
   return findNeedle(member, asciiBytes(marker), 0, member.length);
 }
 
-function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
-  return new SyntheticOverlayAllocator(rom, log).allocate({
+async function allocateSyntheticPayload(rom, marker, buildPayload, log, label, options = {}) {
+  return new SyntheticOverlayAllocator(rom, log).allocateAsync({
     marker,
     buildPayload,
     label,
@@ -609,7 +519,7 @@ function patchRedChainCandyItemGraphics(rom, log) {
   );
 }
 
-function patchInfiniteContinuousCandy(rom, force, log) {
+async function patchInfiniteContinuousCandy(rom, force, log) {
   let outRom = rom;
   const status = dsPreArm9ExpansionStatus(outRom);
   if (!(status.branchInstalled && status.initInstalled && status.synthAvailable)) {
@@ -628,7 +538,7 @@ function patchInfiniteContinuousCandy(rom, force, log) {
 
   let chain = findExistingChainCandyFunction(outRom);
   if (!chain) {
-    const allocated = allocateSyntheticPayload(
+    const allocated = await allocateSyntheticPayload(
       outRom,
       CHAIN_CANDY_MARKER,
       buildChainCandyPayload,
@@ -667,7 +577,7 @@ function patchInfiniteContinuousCandy(rom, force, log) {
     writeBytes(outRom, chainHookAt, chainHook);
   }
 
-  const infinite = allocateSyntheticPayload(
+  const infinite = await allocateSyntheticPayload(
     outRom,
     INFINITE_CANDY_MARKER,
     buildInfiniteCandyPayload,

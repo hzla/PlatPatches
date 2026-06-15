@@ -38,6 +38,7 @@ Included patches:
 - Experimental normal async text speed, configurable from 2x to 10x
 - Player-side standard accuracy bypass
 - Nature stat colors on the Pokemon summary screen
+- Custom overworld sprite table expansion for appended `data/mmodel/mmodel.narc` members
 
 Notes:
 
@@ -66,6 +67,7 @@ Notes:
 - The experimental text speed patch first applies the fastest normal async text speed, then hooks the async text-printer task to render the selected number of normal characters per frame, from 2x to 10x. Callback-driven text falls back to one render per frame for safety, but timing quirks are still possible.
 - The player accuracy patch bypasses the standard accuracy miss roll. It does not remove type immunities, Protect, or semi-invulnerable state checks.
 - The nature stat colors patch colors summary-screen stats the same way later Gen 4 games do: red for nature boosts, blue for nature drops, black for neutral stats. It automatically installs/preserves the DSPRE ARM9 expansion so its helper can live in the synthetic overlay.
+- The Custom overworld sprites patch detects appended `data/mmodel/mmodel.narc` members beyond the vanilla / Platinum Kaizo baseline of 470 members and creates one UI mapping row per added member. Each row maps a new appearance ID to an mmodel member and clones renderer, render-property, and animation metadata from an existing trainer-style appearance ID. It is intended for ordinary trainer-style overworld sprite copies and palette variants, not special berry-growth, field-effect, or other hardcoded OW ID ranges.
 - Several patches sanity-check their expected bytes and scan nearby if a compatible ROM has shifted code. The log calls out fallback scan usage and the patched offset.
 
 ## ARM9 usage map
@@ -76,6 +78,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | --- | --- | --- | --- | --- |
 | DSPRE ARM9 expansion branch | `0x02000CB4-0x02000CB7` | `0x00004CB4-0x00004CB7` | `0x4` | Branches into the synthetic-overlay loader setup used by DSPRE. |
 | DSPRE ARM9 synthetic-overlay loader | `0x02101574-0x0210158C` | `0x00105574-0x0010558C` | `0x19` | Loader init stub for `data/weather_sys.narc` member `9` at RAM `0x023C8000`. |
+| Custom overworld sprite renderer-table pointer | `0x02063264-0x02063267` | `0x00067264-0x00067267` | `0x4` | Redirects the ARM9 literal for overlay 5 renderer-behavior table `Unk_ov5_021FB97C` to the relocated synthetic-overlay copy. |
 | Unlock framerate, global | `0x02000DF8-0x02000DF9` | `0x00004DF8-0x00004DF9` | `0x2` | NOPs the `gSystem.frameCounter` reset halfword. |
 | Unlock framerate, battle only hook | `0x02000DF2-0x02000DF9` | `0x00004DF2-0x00004DF9` | `0x8` | Replaces the surrounding VBlank counter/reset sequence with a `bl` hook. |
 | Unlock framerate, battle only helper | `0x020F93D0-0x020F93EB` | `0x000FD3D0-0x000FD3EB` | `0x1C` | Preferred helper cave. Reads the battle overlay signature at `0x0224A948`. |
@@ -114,7 +117,7 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 
 The movement patch can also repair the older pointer-table version of this patcher if it sees it. That compatibility repair may touch these 4-byte ARM9 words: `0x020EF53C`, `0x020EF530`, `0x020EF524`, `0x020EF518`, `0x020EF50C`, `0x020EF500`, `0x020EF4F4`, `0x020EF4E8`, `0x020EF4DC`, `0x020EF4D0`, `0x020EF4C4`, `0x020EF4B8`, `0x020EF194`, `0x020EF224`, `0x020EF440`, and `0x020EF470`.
 
-Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. The shared `SyntheticOverlayAllocator` scans member `9` for an existing ASCII marker first, then dynamically places new payloads into the first large enough aligned zero-filled run. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Item Renewal allocates `item_renewal_v12` for its held-item writeback and battle-party display helpers. Nature stat colors allocates `NATSTATCOLOR1` for its summary print helper. Older `chain_candy_start`, `inf_candy_remove_v1`, and older Item Renewal helpers are detected so already-patched ROMs can migrate cleanly.
+Synthetic-overlay allocations used by this patcher live in `data/weather_sys.narc` member `9`, which is loaded at RAM `0x023C8000` after the DSPRE ARM9 expansion is installed. The shared `SyntheticOverlayAllocator` scans member `9` for an existing ASCII marker first, then dynamically places new payloads into the first large enough aligned zero-filled run. Infinite Candy allocates `chain_candy_red_v1` for party-menu chaining and `inf_redchain_remove_v1` for the Red Chain removal guard. Item Renewal allocates `item_renewal_v12` for its held-item writeback and battle-party display helpers. Nature stat colors allocates `NATSTATCOLOR1` for its summary print helper. Custom overworld sprites allocates `OWTBLXPANDV1` for relocated/expanded overlay 5 appearance tables. Older `chain_candy_start`, `inf_candy_remove_v1`, and older Item Renewal helpers are detected so already-patched ROMs can migrate cleanly.
 
 These current patches do not modify ARM9: No critical hits, critical hit odds, critical damage 1.5x, Remove EV gain, universal infatuation, wild nature filter, Remove Surf/Waterfall checks, VS Seeker QoL, Dry Skin AI fix, player accuracy bypass, and the non-helper portions of Fairy Patch. They use overlays and/or NARC files instead.
 
@@ -140,6 +143,9 @@ Observed overlay bases:
 | Remove Surf/Waterfall checks | 5 | `0x1AB2-0x1AB5` | `0x021D2832-0x021D2835` | `0x001530B2-0x001530B5` | `0x4` | Allows Surf and Waterfall without requiring the matching HM move in the party. |
 | VS Seeker QoL | 5 | `0xAE44-0xAE46` | `0x021DBBC4-0x021DBBC6` | `0x0015C444-0x0015C446` | `0x3` | Recharge/rematch byte edit. |
 | VS Seeker QoL | 5 | `0xAFA8` | `0x021DBD28` | `0x0015C5A8` | `0x1` | Rematch chance byte edit. |
+| Custom overworld sprite render-property pointer | 5 | `0x1BFB0-0x1BFB3` | `0x021ECD30-0x021ECD33` | `0x0016D5B0-0x0016D5B3` | `0x4` | Redirects the `Unk_ov5_021FC194` table literal to the relocated synthetic-overlay copy. |
+| Custom overworld sprite texture pointers | 5 | `0x1C620-0x1C623`, `0x1C634-0x1C637`, `0x1D910-0x1D913` | `0x021ED3A0`, `0x021ED3B4`, `0x021EE690` | `0x0016DC20`, `0x0016DC34`, `0x0016EF10` | `0x4` each | Redirects `Unk_ov5_021FC9B4` table literals to the relocated synthetic-overlay copy. |
+| Custom overworld sprite animation pointer | 5 | `0x1CFA4-0x1CFA7` | `0x021EDD24-0x021EDD27` | `0x0016E5A4-0x0016E5A7` | `0x4` | Redirects the `Unk_ov5_021FD77C` table literal to the relocated synthetic-overlay copy. |
 | Wild nature filter | 6 | `0x39A4-0x39FF` | `0x02241AE4-0x02241B3F` | `0x001863A4-0x001863FF` | `0x5C` | Replaces the wild nature generation routine with the allowed-nature table patch. |
 | Forgettable HMs | 13 | `0x94E-0x953` | `0x0222056E-0x02220573` | `0x001C354E-0x001C3553` | `0x6` | Overlay HM forget check. |
 | Dry Skin AI fix | 14 | `0x4DAC` | `0x022249CC` | `0x001D1BAC` | `0x1` | Corrects the trainer AI value used for Dry Skin. |
@@ -180,6 +186,8 @@ The Fairy Patch also modifies NARC assets outside overlays: `battle/graphic/pl_b
 Infinite Candy also modifies NARC data outside overlays: `itemtool/itemdata/pl_item_data.narc` member `0x1A3`, replacing Red Chain item data with Rare Candy party-use behavior while keeping it in the Key Items pocket. Its ARM9 item-table entry points to Rare Candy's existing icon and palette in `itemtool/itemdata/item_icon.narc`; no icon members are duplicated. It also renames Red Chain text through `msgdata/pl_msg.narc` members `391`, `392`, `393`, and `394`, entry `441`. Its helper code is stored in `data/weather_sys.narc` member `9`, alongside other DSPRE/G4Patcher-style synthetic-overlay code.
 
 The DSPRE ARM9 expansion modifies NARC storage outside overlays: `data/weather_sys.narc` member `9` is expanded to `0x16000` bytes. On ROMs without enough padding after that NARC, the installer grows the ROM, shifts later file data forward, updates affected FAT entries, and updates the NDS size/capacity header fields.
+
+Custom overworld sprites reads `data/mmodel/mmodel.narc` to detect and validate appended model members, but it does not add or modify those members. Add the copied/palette-variant mmodel members with your normal asset tool first, then use this patch to map them to new appearance IDs.
 
 Modern sleep also edits the battle script byte sequence for `subscript_fall_asleep`, changing `Random 3, 2` to `Random 1, 3` before `BATTLEMON_STATUS` is updated. Observed ROM offsets are `0x008BDC08` in pkaizo and `0x03960E00` in clean US Platinum.
 

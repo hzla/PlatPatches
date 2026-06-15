@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=47" />
+    <link rel="stylesheet" href="./styles.css?v=48" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v47</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v48</div>
       </section>
 
       <section class="panel upload-panel">
@@ -48,6 +48,23 @@
                   <small class="patch-status" id="arm9ExpansionStatus">Load a ROM to check expansion status.</small>
                 </span>
               </label>
+
+              <div class="patch-card patch-card-config patch-card-wide">
+                <input id="customOverworldSpritesPatch" type="checkbox" value="customOverworldSprites" />
+                <div class="patch-body">
+                  <label class="patch-title" for="customOverworldSpritesPatch">
+                    <strong>Custom overworld sprites</strong>
+                    <small>Relocates the overworld appearance tables and maps appended mmodel.narc members to new appearance IDs.</small>
+                  </label>
+                  <div class="ow-sprite-config">
+                    <div class="ow-sprite-toolbar">
+                      <small class="patch-status" id="customOverworldSpriteStatus">Load a ROM to detect appended mmodel members.</small>
+                      <button id="customOverworldSpriteRefresh" class="secondary-button" type="button">Detect</button>
+                    </div>
+                    <div class="ow-sprite-rows" id="customOverworldSpriteRows"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -431,27 +448,28 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=47"></script>
-    <script src="./src/patches/registry.js?v=47"></script>
-    <script src="./src/patches/infrastructure.js?v=47"></script>
-    <script src="./src/patches/simple-sites.js?v=47"></script>
-    <script src="./src/patches/fairy-type.js?v=47"></script>
-    <script src="./vendor/armips/armips.js?v=47"></script>
-    <script src="./src/asm/armips-assembler.js?v=47"></script>
-    <script src="./src/asm/templates.js?v=47"></script>
-    <script src="./src/patches/infinite-candy.js?v=47"></script>
-    <script src="./src/patches/item-renewal.js?v=47"></script>
-    <script src="./src/patches/text-speed.js?v=47"></script>
-    <script src="./src/patches/modern-status.js?v=47"></script>
-    <script src="./src/patches/battle-critical.js?v=47"></script>
-    <script src="./src/patches/rng-generation.js?v=47"></script>
-    <script src="./src/patches/wild-natures.js?v=47"></script>
-    <script src="./src/patches/battle-weather.js?v=47"></script>
-    <script src="./src/patches/frame-rate.js?v=47"></script>
-    <script src="./src/patches/field-movement.js?v=47"></script>
-    <script src="./src/patches/field-misc.js?v=47"></script>
-    <script src="./src/patches/summary-screen.js?v=47"></script>
-    <script src="./app.js?v=47"></script>
-    <script src="./src/ui/init-ui.js?v=47"></script>
+    <script src="./src/core.js?v=48"></script>
+    <script src="./src/patches/registry.js?v=48"></script>
+    <script src="./src/patches/infrastructure.js?v=48"></script>
+    <script src="./src/patches/simple-sites.js?v=48"></script>
+    <script src="./src/patches/fairy-type.js?v=48"></script>
+    <script src="./vendor/armips/armips.js?v=48"></script>
+    <script src="./src/asm/armips-assembler.js?v=48"></script>
+    <script src="./src/asm/templates.js?v=48"></script>
+    <script src="./src/patches/infinite-candy.js?v=48"></script>
+    <script src="./src/patches/item-renewal.js?v=48"></script>
+    <script src="./src/patches/text-speed.js?v=48"></script>
+    <script src="./src/patches/modern-status.js?v=48"></script>
+    <script src="./src/patches/battle-critical.js?v=48"></script>
+    <script src="./src/patches/rng-generation.js?v=48"></script>
+    <script src="./src/patches/wild-natures.js?v=48"></script>
+    <script src="./src/patches/battle-weather.js?v=48"></script>
+    <script src="./src/patches/frame-rate.js?v=48"></script>
+    <script src="./src/patches/field-movement.js?v=48"></script>
+    <script src="./src/patches/field-misc.js?v=48"></script>
+    <script src="./src/patches/summary-screen.js?v=48"></script>
+    <script src="./src/patches/overworld-sprites.js?v=48"></script>
+    <script src="./app.js?v=48"></script>
+    <script src="./src/ui/init-ui.js?v=48"></script>
   </body>
 </html>

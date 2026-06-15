@@ -27,6 +27,7 @@
     critBaseDivisorOption,
     critOddsLabel,
     customOutputName,
+    detectCustomMmodelMembers,
     frameRateModeOption,
     hasPatch,
     hex,
@@ -74,6 +75,9 @@ function initUi() {
   const fairyPokemonTypesInput = document.getElementById("fairyPokemonTypesPatch");
   const universalInfatuationInput = document.getElementById("universalInfatuationPatch");
   const universalInfatuationAiInput = document.getElementById("universalInfatuationAiPatch");
+  const customOverworldSpriteRows = document.getElementById("customOverworldSpriteRows");
+  const customOverworldSpriteStatus = document.getElementById("customOverworldSpriteStatus");
+  const customOverworldSpriteRefresh = document.getElementById("customOverworldSpriteRefresh");
 
   let loadedFile = null;
   let loadedBytes = null;
@@ -121,6 +125,82 @@ function initUi() {
     }
   }
 
+  function createCustomOverworldInput(labelText, field, value) {
+    const label = document.createElement("label");
+    label.className = "ow-sprite-field";
+
+    const span = document.createElement("span");
+    span.textContent = labelText;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.dataset.owField = field;
+
+    label.append(span, input);
+    return label;
+  }
+
+  function renderCustomOverworldSpriteRows(bytes) {
+    if (!customOverworldSpriteRows || !customOverworldSpriteStatus) {
+      return;
+    }
+    customOverworldSpriteRows.textContent = "";
+    customOverworldSpriteStatus.classList.remove("ready", "missing");
+
+    if (!bytes) {
+      customOverworldSpriteStatus.textContent = "Load a ROM to detect appended mmodel members.";
+      return;
+    }
+
+    try {
+      const info = detectCustomMmodelMembers(bytes);
+      if (info.addedMembers.length) {
+        customOverworldSpriteStatus.classList.add("ready");
+        customOverworldSpriteStatus.textContent = `Detected ${info.addedMembers.length} appended mmodel member${
+          info.addedMembers.length === 1 ? "" : "s"
+        }.`;
+      } else {
+        customOverworldSpriteStatus.textContent = `No appended mmodel members detected. ${info.count}/${info.baselineCount} members.`;
+      }
+
+      info.addedMembers.forEach((mmodelMember, index) => {
+        const row = document.createElement("div");
+        row.className = "ow-sprite-row";
+        row.append(
+          createCustomOverworldInput("Appearance ID", "appearanceId", hex(0x200 + index)),
+          createCustomOverworldInput("mmodel member", "mmodelMember", hex(mmodelMember)),
+          createCustomOverworldInput("Clone from", "cloneFrom", "0x78")
+        );
+        customOverworldSpriteRows.append(row);
+      });
+    } catch (error) {
+      customOverworldSpriteStatus.classList.add("missing");
+      customOverworldSpriteStatus.textContent = "Could not inspect data/mmodel/mmodel.narc.";
+    }
+  }
+
+  function customOverworldSpriteEntries() {
+    if (!customOverworldSpriteRows) {
+      return [];
+    }
+    return Array.from(customOverworldSpriteRows.querySelectorAll(".ow-sprite-row"))
+      .map((row) => {
+        const field = (name) => {
+          const input = row.querySelector(`[data-ow-field="${name}"]`);
+          return input ? input.value.trim() : "";
+        };
+        return {
+          appearanceId: field("appearanceId"),
+          mmodelMember: field("mmodelMember"),
+          cloneFrom: field("cloneFrom"),
+        };
+      })
+      .filter((row) => row.appearanceId || row.mmodelMember);
+  }
+
   function clearDownload() {
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
@@ -163,6 +243,7 @@ function initUi() {
       }),
       natureAllowed: selectedNatureIds(),
       universalInfatuationAi: universalInfatuationAiInput.checked,
+      customOverworldSprites: customOverworldSpriteEntries(),
       debugFairyBattleTest: Boolean(config.debugFairyBattleTest),
     };
   }
@@ -192,6 +273,12 @@ function initUi() {
     }
     if (id === "universalInfatuation" && options && options.universalInfatuationAi) {
       return `${PATCHES[id]} (with trainer AI support)`;
+    }
+    if (id === "customOverworldSprites") {
+      const count = Array.isArray(options && options.customOverworldSprites)
+        ? options.customOverworldSprites.length
+        : 0;
+      return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
     }
     return PATCHES[id];
   }
@@ -350,6 +437,7 @@ function initUi() {
   updateIvRangeValue();
   updateNatureCount();
   updateArm9ExpansionStatus();
+  renderCustomOverworldSpriteRows();
   textCharsPerFrameInput.addEventListener("input", () => {
     updateTextSpeedValue();
     clearDownload();
@@ -409,6 +497,15 @@ function initUi() {
   patchGrid.addEventListener("change", clearDownload);
   forceInput.addEventListener("change", clearDownload);
   outputNameInput.addEventListener("input", clearDownload);
+  if (customOverworldSpriteRows) {
+    customOverworldSpriteRows.addEventListener("input", clearDownload);
+  }
+  if (customOverworldSpriteRefresh) {
+    customOverworldSpriteRefresh.addEventListener("click", () => {
+      clearDownload();
+      renderCustomOverworldSpriteRows(loadedBytes);
+    });
+  }
 
   romInput.addEventListener("change", async () => {
     clearDownload();
@@ -420,6 +517,7 @@ function initUi() {
       romStatus.textContent = `No ROM loaded · ${APP_VERSION}`;
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
+      renderCustomOverworldSpriteRows();
       fileSubtitle.textContent = "The patched ROM is generated locally in your browser.";
       setLog("Waiting for a ROM.");
       return;
@@ -432,6 +530,7 @@ function initUi() {
       romStatus.textContent = `${loadedFile.name} loaded · ${APP_VERSION}`;
       romStatus.classList.add("ready");
       updateArm9ExpansionStatus(loadedBytes);
+      renderCustomOverworldSpriteRows(loadedBytes);
       fileSubtitle.textContent = `${loadedFile.name} - ${(loadedFile.size / 1024 / 1024).toFixed(
         1
       )} MB`;
@@ -445,6 +544,7 @@ function initUi() {
       romStatus.textContent = "Load failed";
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
+      renderCustomOverworldSpriteRows();
       setLog(`Error: ${error.message}`);
     }
   });

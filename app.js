@@ -175,12 +175,26 @@
     throw new Error("PlatinumPatcherSummaryScreenPatches failed to load.");
   }
 
+  const overworldSpritePatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/overworld-sprites.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherOverworldSpritePatches
+        : undefined;
+  if (!overworldSpritePatches) {
+    throw new Error("PlatinumPatcherOverworldSpritePatches failed to load.");
+  }
+
   const { createPatchRegistry } = registryModule;
   const {
     PatchError,
     hex,
     dsPreArm9ExpansionStatus,
+    findFileByPath,
+    parseNarc,
   } = core;
+  const BASE_MMODEL_MEMBER_COUNT = 470;
+  const MMODEL_NARC_PATH = "data/mmodel/mmodel.narc";
 
   const PATCHES = {
     arm9Expansion: "DSPRE ARM9 expansion",
@@ -217,8 +231,9 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
     natureStatColors: "Nature stat colors",
+    customOverworldSprites: "Custom overworld sprites",
   };
-  const APP_VERSION = "v47";
+  const APP_VERSION = "v48";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -253,6 +268,18 @@
         "Global mode: ARM9 RAM 0x02000DF8-0x02000DF9 / ROM 0x00004DF8-0x00004DF9.",
         "Battle mode hook: ARM9 RAM 0x02000DF2-0x02000DF9 / ROM 0x00004DF2-0x00004DF9.",
         "Battle mode helper: ARM9 RAM 0x020F93D0-0x020F93EB / ROM 0x000FD3D0-0x000FD3EB.",
+      ],
+    },
+    customOverworldSprites: {
+      title: "Custom overworld sprites",
+      summary:
+        "Relocates and expands the overworld appearance tables so newly appended data/mmodel/mmodel.narc members can be mapped to new trainer-style overworld appearance IDs.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion synthetic overlay; the patcher installs or preserves it automatically.",
+        "Relocated tables are written to dynamically detected zero-filled space in data/weather_sys.narc member 9.",
+        "ARM9 renderer-behavior table literal for Unk_ov5_021FB97C is redirected to the relocated table.",
+        "Overlay 5 render properties, texture association, and animation table literals for Unk_ov5_021FC194, Unk_ov5_021FC9B4, and Unk_ov5_021FD77C are redirected to relocated copies.",
+        "Each custom row maps a new appearance ID to an appended mmodel.narc member and clones renderer, render-property, and animation metadata from an existing overworld ID.",
       ],
     },
     shinyOdds: {
@@ -643,6 +670,23 @@
     return mask.toString(16).toUpperCase();
   }
 
+  function detectCustomMmodelMembers(inputBytes) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const file = findFileByPath(rom, MMODEL_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const count = parseNarc(narc).entries.length;
+    const addedMembers = [];
+    for (let member = BASE_MMODEL_MEMBER_COUNT; member < count; member += 1) {
+      addedMembers.push(member);
+    }
+    return {
+      path: MMODEL_NARC_PATH,
+      count,
+      baselineCount: BASE_MMODEL_MEMBER_COUNT,
+      addedMembers,
+    };
+  }
+
   function shinyThresholdOption(options) {
     if (options && options.shinyOddsPercent !== undefined) {
       return shinyThresholdFromPercent(options.shinyOddsPercent);
@@ -716,6 +760,7 @@
     { id: "text4x", apply: textSpeedPatches.text4x },
     { id: "playerAccuracy", apply: fieldMiscPatches.playerAccuracy },
     { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
+    { id: "customOverworldSprites", apply: overworldSpritePatches.customOverworldSprites },
   ]);
 
   async function applySelectedPatches(inputBytes, patchIds, options = {}) {
@@ -736,7 +781,8 @@
     if (
       selected.has("infiniteContinuousCandy") ||
       selected.has("itemRenewal") ||
-      selected.has("natureStatColors")
+      selected.has("natureStatColors") ||
+      selected.has("customOverworldSprites")
     ) {
       selected.add("arm9Expansion");
     }
@@ -828,6 +874,8 @@
               ? "noevs"
             : id === "natureStatColors"
               ? "naturecolors"
+            : id === "customOverworldSprites"
+              ? "customowsprites"
             : id === "instantPartyHealing"
               ? "instanthealing"
             : id === "timeOfDayEvos"
@@ -874,6 +922,7 @@
       critBaseDivisorOption,
       critOddsLabel,
       customOutputName,
+      detectCustomMmodelMembers,
       frameRateModeOption,
       hasPatch,
       hex,
@@ -904,6 +953,7 @@
       critBaseDivisorOption,
       critOddsLabel,
       customOutputName,
+      detectCustomMmodelMembers,
       frameRateModeOption,
       hasPatch,
       hex,

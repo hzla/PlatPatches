@@ -203,6 +203,10 @@ input[type="file"] {
   accent-color: var(--accent);
 }
 
+.patch-card-wide {
+  grid-column: 1 / -1;
+}
+
 .patch-body {
   min-width: 0;
 }
@@ -245,6 +249,65 @@ input[type="file"] {
   border-color: rgba(162, 54, 54, 0.28);
   color: var(--bad);
   background: rgba(162, 54, 54, 0.07);
+}
+
+.ow-sprite-config {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ow-sprite-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ow-sprite-toolbar .patch-status {
+  margin-top: 0;
+}
+
+.ow-sprite-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.ow-sprite-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.ow-sprite-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ow-sprite-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: #ffffff;
+}
+
+.ow-sprite-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(35, 104, 162, 0.18);
 }
 
 .patch-info-button {
@@ -515,6 +578,19 @@ button:hover {
   background: var(--accent-dark);
 }
 
+button.secondary-button {
+  border: 1px solid var(--line);
+  padding: 7px 10px;
+  color: var(--accent);
+  background: #fbfcfe;
+}
+
+button.secondary-button:hover {
+  border-color: rgba(35, 104, 162, 0.45);
+  color: #ffffff;
+  background: var(--accent);
+}
+
 button:disabled {
   background: #b7c1cb;
   cursor: not-allowed;
@@ -656,6 +732,10 @@ pre {
   }
 
   .patch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ow-sprite-row {
     grid-template-columns: 1fr;
   }
 

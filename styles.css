@@ -148,9 +148,66 @@ input[type="file"] {
   gap: 18px;
 }
 
+.patch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.patch-tabs .patch-tab {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  padding: 9px 4px 10px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  background: transparent;
+  cursor: pointer;
+}
+
+.patch-tabs .patch-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+}
+
+.patch-tabs .patch-tab:hover,
+.patch-tabs .patch-tab:focus-visible {
+  color: var(--accent-dark);
+  background: transparent;
+  outline: none;
+}
+
+.patch-tabs .patch-tab:focus-visible {
+  box-shadow: 0 0 0 3px rgba(35, 104, 162, 0.14);
+}
+
+.patch-tabs .patch-tab.is-active {
+  color: var(--accent-dark);
+  background: transparent;
+}
+
+.patch-tabs .patch-tab.is-active::after {
+  opacity: 1;
+}
+
 .patch-section {
   display: grid;
   gap: 10px;
+}
+
+.patch-section[hidden] {
+  display: none;
 }
 
 .patch-section-heading {

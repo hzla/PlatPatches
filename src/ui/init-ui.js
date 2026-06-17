@@ -36,6 +36,8 @@
     ivRangeText,
     natureAllowedOption,
     outputName,
+    pokemonFamilyForSpecies,
+    pokemonWithLevelUpMove,
     readMoveNames,
     readSpeciesNames,
     shinyOddsLabel,
@@ -43,6 +45,7 @@
     shinyThresholdFromPercent,
     shinyThresholdOption,
     textCharsPerFrameOption,
+    vanillaTmCompatibilityForMove,
   } = api;
 
 function initUi() {
@@ -56,6 +59,8 @@ function initUi() {
   const fileSubtitle = document.getElementById("fileSubtitle");
   const arm9ExpansionStatus = document.getElementById("arm9ExpansionStatus");
   const patchGrid = document.getElementById("patchGrid");
+  const patchTabButtons = Array.from(document.querySelectorAll("[data-patch-tab]"));
+  const patchTabPanels = Array.from(document.querySelectorAll("[data-patch-panel]"));
   const patchInfoModal = document.getElementById("patchInfoModal");
   const patchInfoTitle = document.getElementById("patchInfoTitle");
   const patchInfoSummary = document.getElementById("patchInfoSummary");
@@ -95,6 +100,10 @@ function initUi() {
   const extraTmCompatClose = document.getElementById("extraTmCompatClose");
   const extraTmCompatInput = document.getElementById("extraTmCompatInput");
   const extraTmCompatAdd = document.getElementById("extraTmCompatAdd");
+  const extraTmCompatAddFamily = document.getElementById("extraTmCompatAddFamily");
+  const extraTmCompatAddLearnset = document.getElementById("extraTmCompatAddLearnset");
+  const extraTmCompatCopyInput = document.getElementById("extraTmCompatCopyInput");
+  const extraTmCompatCopy = document.getElementById("extraTmCompatCopy");
   const extraTmCompatClear = document.getElementById("extraTmCompatClear");
   const extraTmCompatList = document.getElementById("extraTmCompatList");
   const extraTmCompatStatus = document.getElementById("extraTmCompatStatus");
@@ -578,6 +587,97 @@ function initUi() {
     }
   }
 
+  function activeExtraTmMoveToken() {
+    if (!activeCompatRow) {
+      return "";
+    }
+    const input = activeCompatRow.querySelector("[data-extra-tm-field='move']");
+    return input ? input.value.trim() : "";
+  }
+
+  function requireLoadedRomForCompatAction() {
+    if (!loadedBytes) {
+      throw new Error("Load a ROM before using compatibility helpers.");
+    }
+  }
+
+  function addCompatibilityIds(ids, message) {
+    if (!activeCompatRow || !extraTmCompatStatus) {
+      return;
+    }
+    setRowCompatibility(activeCompatRow, [...rowCompatibility(activeCompatRow), ...ids]);
+    renderCompatibilityList();
+    extraTmCompatStatus.textContent = message;
+    clearDownload();
+  }
+
+  function addLevelUpLearners() {
+    if (!activeCompatRow || !extraTmCompatStatus) {
+      return;
+    }
+    try {
+      requireLoadedRomForCompatAction();
+      const moveToken = activeExtraTmMoveToken();
+      const result = pokemonWithLevelUpMove(loadedBytes, moveToken);
+      addCompatibilityIds(
+        result.compatiblePokemon,
+        result.compatiblePokemon.length
+          ? `Added ${result.compatiblePokemon.length} Pokemon that learn this move by level-up.`
+          : "No Pokemon learn this move by level-up in the loaded ROM."
+      );
+    } catch (error) {
+      extraTmCompatStatus.textContent = error.message;
+    }
+  }
+
+  function addCompatibilityFamilyInput() {
+    if (!activeCompatRow || !extraTmCompatInput || !extraTmCompatStatus) {
+      return;
+    }
+    try {
+      requireLoadedRomForCompatAction();
+      const tokens = String(extraTmCompatInput.value || "")
+        .split(/[,\n;]/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+      if (!tokens.length) {
+        extraTmCompatStatus.textContent = "Enter a Pokemon name or ID first.";
+        return;
+      }
+      const ids = [];
+      for (const token of tokens) {
+        const result = pokemonFamilyForSpecies(loadedBytes, token);
+        ids.push(...result.compatiblePokemon);
+      }
+      addCompatibilityIds(ids, `Added ${Array.from(new Set(ids)).length} Pokemon from evolution famil${tokens.length === 1 ? "y" : "ies"}.`);
+      extraTmCompatInput.value = "";
+    } catch (error) {
+      extraTmCompatStatus.textContent = error.message;
+    }
+  }
+
+  function copyCompatibilityFromTmInput() {
+    if (!activeCompatRow || !extraTmCompatCopyInput || !extraTmCompatStatus) {
+      return;
+    }
+    try {
+      requireLoadedRomForCompatAction();
+      const token = extraTmCompatCopyInput.value.trim();
+      if (!token) {
+        extraTmCompatStatus.textContent = "Enter an existing TM/HM move name or ID first.";
+        return;
+      }
+      const result = vanillaTmCompatibilityForMove(loadedBytes, token);
+      setRowCompatibility(activeCompatRow, result.compatiblePokemon);
+      renderCompatibilityList();
+      const source = result.isHm ? `HM${result.tmNumber}` : `TM${result.tmNumber}`;
+      extraTmCompatStatus.textContent = `Copied ${result.compatiblePokemon.length} compatible Pokemon from ${source}.`;
+      clearDownload();
+    } catch (error) {
+      extraTmCompatStatus.textContent = error.message;
+    }
+  }
+
   function createExtraTmRow(values = {}, index = 0) {
     const row = document.createElement("div");
     row.className = "extra-tm-row";
@@ -929,6 +1029,37 @@ function initUi() {
     }
   }
 
+  function selectPatchTab(tabId) {
+    patchTabButtons.forEach((button) => {
+      const active = button.dataset.patchTab === tabId;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    });
+    patchTabPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.patchPanel !== tabId;
+    });
+  }
+
+  patchTabButtons.forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      selectPatchTab(button.dataset.patchTab);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const index = patchTabButtons.indexOf(button);
+      const next = patchTabButtons[(index + direction + patchTabButtons.length) % patchTabButtons.length];
+      next.focus();
+      selectPatchTab(next.dataset.patchTab);
+    });
+  });
+  selectPatchTab("infra");
+
   renderNatureButtons();
   addItemExpansionRow();
   renumberItemExpansionRows();
@@ -1005,6 +1136,9 @@ function initUi() {
     }
   });
   extraTmCompatAdd.addEventListener("click", addCompatibilityInput);
+  extraTmCompatAddFamily.addEventListener("click", addCompatibilityFamilyInput);
+  extraTmCompatAddLearnset.addEventListener("click", addLevelUpLearners);
+  extraTmCompatCopy.addEventListener("click", copyCompatibilityFromTmInput);
   extraTmCompatClear.addEventListener("click", () => {
     if (!activeCompatRow) {
       return;
@@ -1017,6 +1151,12 @@ function initUi() {
     if (event.key === "Enter") {
       event.preventDefault();
       addCompatibilityInput();
+    }
+  });
+  extraTmCompatCopyInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      copyCompatibilityFromTmInput();
     }
   });
   patchGrid.addEventListener("change", (event) => {

@@ -218,11 +218,14 @@
     readSyntheticOverlayMember,
     readU16,
     readU32,
+    arm9Offset,
   } = core;
   const BASE_MMODEL_MEMBER_COUNT = 470;
   const MMODEL_NARC_PATH = "data/mmodel/mmodel.narc";
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
   const PERSONAL_NARC_PATH = "poketool/personal/pl_personal.narc";
+  const WOTBL_NARC_PATH = "poketool/personal/wotbl.narc";
+  const EVO_NARC_PATH = "poketool/personal/evo.narc";
   const EXTRA_TMS_MARKER = "EXTRATMSV1\0\0\0\0\0\0";
   const EXTRA_TM_COUNT = 60;
   const EXTRA_TM_VANILLA_COMPAT_ROWS = 28;
@@ -231,6 +234,11 @@
   const EXTRA_TM_PERSONAL_MASK_OFFSET = 0x28;
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
   const SPECIES_NAMES_MESSAGE_MEMBER = 412;
+  const S_TMHM_MOVES_ADDRESS = 0x020f0bfc;
+  const TMHM_COUNT = 100;
+  const VANILLA_TM_COMPAT_MASK_OFFSET = 0x1c;
+  const MAX_EVOLUTIONS = 7;
+  const EVOLUTION_ENTRY_SIZE = 6;
 
   const PATCHES = {
     arm9Expansion: "DSPRE ARM9 expansion",
@@ -271,7 +279,7 @@
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
   };
-  const APP_VERSION = "v54";
+  const APP_VERSION = "v58";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -779,6 +787,147 @@
     );
   }
 
+  function normalizeLookupName(name) {
+    return String(name || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function parseNamedIdToken(token, entries, label) {
+    const text = token === undefined || token === null ? "" : String(token).trim();
+    if (!text) {
+      throw new PatchError(`${label} is required.`);
+    }
+    const numeric = /^0x[0-9a-f]+$/i.test(text)
+      ? Number.parseInt(text.slice(2), 16)
+      : /^[0-9]+$/.test(text)
+        ? Number.parseInt(text, 10)
+        : null;
+    if (numeric !== null) {
+      return numeric;
+    }
+    const wanted = normalizeLookupName(text);
+    const found = entries.find((entry) => normalizeLookupName(entry && entry.name) === wanted);
+    if (!found) {
+      throw new PatchError(`${label} "${text}" was not found in the loaded ROM text banks.`);
+    }
+    return found.id;
+  }
+
+  function readNarcMembersByPath(rom, path) {
+    const file = findFileByPath(rom, path);
+    const narc = rom.slice(file.start, file.end);
+    const parsed = parseNarc(narc);
+    return parsed.entries.map((entry) =>
+      narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end)
+    );
+  }
+
+  function pokemonWithLevelUpMove(inputBytes, moveToken) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const moveNames = readMoveNames(rom);
+    const moveId = parseNamedIdToken(moveToken, moveNames, "Move");
+    const learnsets = readNarcMembersByPath(rom, WOTBL_NARC_PATH);
+    const compatiblePokemon = [];
+    learnsets.forEach((member, speciesId) => {
+      if (speciesId < 1) {
+        return;
+      }
+      for (let offset = 0; offset + 2 <= member.length; offset += 2) {
+        const entry = readU16(member, offset);
+        if (entry === 0xffff) {
+          break;
+        }
+        if ((entry & 0x1ff) === moveId) {
+          compatiblePokemon.push(speciesId);
+          break;
+        }
+      }
+    });
+    return { moveId, compatiblePokemon };
+  }
+
+  function pokemonFamilyForSpecies(inputBytes, speciesToken) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const speciesNames = readSpeciesNames(rom);
+    const speciesId = parseNamedIdToken(speciesToken, speciesNames, "Pokemon");
+    const evoMembers = readNarcMembersByPath(rom, EVO_NARC_PATH);
+    if (speciesId < 1 || speciesId >= evoMembers.length) {
+      throw new PatchError(`Pokemon ${hex(speciesId)} is outside evolution entries 1-${evoMembers.length - 1}.`);
+    }
+
+    const links = Array.from({ length: evoMembers.length }, () => new Set());
+    evoMembers.forEach((member, sourceId) => {
+      for (let index = 0; index < MAX_EVOLUTIONS; index += 1) {
+        const offset = index * EVOLUTION_ENTRY_SIZE;
+        if (offset + EVOLUTION_ENTRY_SIZE > member.length) {
+          break;
+        }
+        const targetId = readU16(member, offset + 4);
+        if (targetId > 0 && targetId < evoMembers.length) {
+          links[sourceId].add(targetId);
+          links[targetId].add(sourceId);
+        }
+      }
+    });
+
+    const family = [];
+    const seen = new Set([speciesId]);
+    const queue = [speciesId];
+    while (queue.length) {
+      const current = queue.shift();
+      family.push(current);
+      for (const next of links[current]) {
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    family.sort((a, b) => a - b);
+    return { speciesId, compatiblePokemon: family };
+  }
+
+  function vanillaTmCompatibilityForMove(inputBytes, moveToken) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const moveNames = readMoveNames(rom);
+    const moveId = parseNamedIdToken(moveToken, moveNames, "Move");
+    const movesOffset = arm9Offset(rom, S_TMHM_MOVES_ADDRESS, TMHM_COUNT * 2);
+    let tmIndex = -1;
+    for (let index = 0; index < TMHM_COUNT; index += 1) {
+      if (readU16(rom, movesOffset + index * 2) === moveId) {
+        tmIndex = index;
+        break;
+      }
+    }
+    if (tmIndex < 0) {
+      throw new PatchError(`Move "${moveToken}" is not assigned to a vanilla TM or HM in this ROM.`);
+    }
+
+    const maskIndex = Math.floor(tmIndex / 32);
+    const bit = (1 << (tmIndex % 32)) >>> 0;
+    const personalMembers = readPersonalMembers(rom);
+    const compatiblePokemon = [];
+    personalMembers.forEach((member, speciesId) => {
+      if (speciesId < 1 || member.length < VANILLA_TM_COMPAT_MASK_OFFSET + (maskIndex + 1) * 4) {
+        return;
+      }
+      if (readU32(member, VANILLA_TM_COMPAT_MASK_OFFSET + maskIndex * 4) & bit) {
+        compatiblePokemon.push(speciesId);
+      }
+    });
+
+    return {
+      moveId,
+      tmIndex,
+      tmNumber: tmIndex < 92 ? tmIndex + 1 : tmIndex - 91,
+      isHm: tmIndex >= 92,
+      compatiblePokemon,
+    };
+  }
+
   function detectExtraTmState(inputBytes) {
     const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
     const personalMembers = readPersonalMembers(rom);
@@ -1119,6 +1268,8 @@
       ivRangeText,
       natureAllowedOption,
       outputName,
+      pokemonFamilyForSpecies,
+      pokemonWithLevelUpMove,
       readMoveNames,
       readSpeciesNames,
       shinyOddsLabel,
@@ -1126,6 +1277,7 @@
       shinyThresholdFromPercent,
       shinyThresholdOption,
       textCharsPerFrameOption,
+      vanillaTmCompatibilityForMove,
     };
   }
 
@@ -1153,6 +1305,8 @@
       ivRangeText,
       natureAllowedOption,
       outputName,
+      pokemonFamilyForSpecies,
+      pokemonWithLevelUpMove,
       readMoveNames,
       readSpeciesNames,
       shinyOddsLabel,
@@ -1160,6 +1314,7 @@
       shinyThresholdFromPercent,
       shinyThresholdOption,
       textCharsPerFrameOption,
+      vanillaTmCompatibilityForMove,
     };
   }
 })();

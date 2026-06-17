@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=54" />
+    <link rel="stylesheet" href="./styles.css?v=58" />
   </head>
   <body>
     <main class="shell">
@@ -33,10 +33,16 @@
           </label>
         </div>
 
+        <div class="patch-tabs" role="tablist" aria-label="Patch categories">
+          <button class="patch-tab is-active" id="infraTab" type="button" role="tab" aria-selected="true" aria-controls="infraPanel" data-patch-tab="infra">Infra</button>
+          <button class="patch-tab" id="battleTab" type="button" role="tab" aria-selected="false" aria-controls="battlePanel" data-patch-tab="battle">Battle Mechanics</button>
+          <button class="patch-tab" id="qolTab" type="button" role="tab" aria-selected="false" aria-controls="qolPanel" data-patch-tab="qol">QoL</button>
+        </div>
+
         <div class="patch-sections" id="patchGrid">
-          <section class="patch-section" aria-labelledby="infrastructureHeading">
+          <section class="patch-section" id="infraPanel" role="tabpanel" aria-labelledby="infraTab" data-patch-panel="infra">
             <div class="patch-section-heading">
-              <h3 id="infrastructureHeading">Infrastructure</h3>
+              <h3 id="infrastructureHeading">Infra</h3>
             </div>
 
             <div class="patch-grid">
@@ -67,6 +73,24 @@
               </div>
 
               <div class="patch-card patch-card-config patch-card-wide">
+                <input id="extraTmsPatch" type="checkbox" value="extraTMs" />
+                <div class="patch-body">
+                  <label class="patch-title" for="extraTmsPatch">
+                    <strong>Extra TMs</strong>
+                    <small>Adds configurable TMs in the TM/HM pocket using new expanded item IDs.</small>
+                  </label>
+                  <div class="extra-tm-config" id="extraTmConfig" hidden>
+                    <div class="extra-tm-toolbar">
+                      <small class="patch-status" id="extraTmStatus">60 Extra TMs configured.</small>
+                    </div>
+                    <datalist id="extraTmMoveOptions"></datalist>
+                    <datalist id="extraTmSpeciesOptions"></datalist>
+                    <div class="extra-tm-rows" id="extraTmRows"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config patch-card-wide">
                 <input id="customOverworldSpritesPatch" type="checkbox" value="customOverworldSprites" />
                 <div class="patch-body">
                   <label class="patch-title" for="customOverworldSpritesPatch">
@@ -85,7 +109,7 @@
             </div>
           </section>
 
-          <section class="patch-section" aria-labelledby="battleMechanicsHeading">
+          <section class="patch-section" id="battlePanel" role="tabpanel" aria-labelledby="battleTab" data-patch-panel="battle" hidden>
             <div class="patch-section-heading">
               <h3 id="battleMechanicsHeading">Battle Mechanics</h3>
             </div>
@@ -243,7 +267,7 @@
             </div>
           </section>
 
-          <section class="patch-section" aria-labelledby="qolHeading">
+          <section class="patch-section" id="qolPanel" role="tabpanel" aria-labelledby="qolTab" data-patch-panel="qol" hidden>
             <div class="patch-section-heading">
               <h3 id="qolHeading">QoL</h3>
             </div>
@@ -421,23 +445,6 @@
                 </span>
               </label>
 
-              <div class="patch-card patch-card-config patch-card-wide">
-                <input id="extraTmsPatch" type="checkbox" value="extraTMs" />
-                <div class="patch-body">
-                  <label class="patch-title" for="extraTmsPatch">
-                    <strong>Extra TMs</strong>
-                    <small>Adds configurable TMs in the TM/HM pocket using new expanded item IDs.</small>
-                  </label>
-                  <div class="extra-tm-config" id="extraTmConfig" hidden>
-                    <div class="extra-tm-toolbar">
-                      <small class="patch-status" id="extraTmStatus">60 Extra TMs configured.</small>
-                    </div>
-                    <datalist id="extraTmMoveOptions"></datalist>
-                    <datalist id="extraTmSpeciesOptions"></datalist>
-                    <div class="extra-tm-rows" id="extraTmRows"></div>
-                  </div>
-                </div>
-              </div>
             </div>
           </section>
         </div>
@@ -494,7 +501,16 @@
           </label>
           <div class="compat-actions">
             <button id="extraTmCompatAdd" type="button">Add</button>
+            <button id="extraTmCompatAddFamily" class="secondary-button" type="button">Add Family</button>
+            <button id="extraTmCompatAddLearnset" class="secondary-button" type="button">Add Level-Up Learners</button>
             <button id="extraTmCompatClear" class="secondary-button" type="button">Clear</button>
+          </div>
+          <label class="compat-field">
+            <span>Copy from existing TM/HM move</span>
+            <input id="extraTmCompatCopyInput" type="text" list="extraTmMoveOptions" placeholder="Giga Drain" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="compat-actions">
+            <button id="extraTmCompatCopy" class="secondary-button" type="button">Copy Compatibility</button>
           </div>
           <p class="compat-help" id="extraTmCompatHelp">Leaving this list empty means no Pokemon can learn this TM.</p>
           <div class="compat-list" id="extraTmCompatList"></div>
@@ -503,30 +519,30 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=54"></script>
-    <script src="./src/patches/registry.js?v=54"></script>
-    <script src="./src/patches/infrastructure.js?v=54"></script>
-    <script src="./src/patches/simple-sites.js?v=54"></script>
-    <script src="./src/patches/fairy-type.js?v=54"></script>
-    <script src="./vendor/armips/armips.js?v=54"></script>
-    <script src="./src/asm/armips-assembler.js?v=54"></script>
-    <script src="./src/asm/templates.js?v=54"></script>
-    <script src="./src/patches/infinite-candy.js?v=54"></script>
-    <script src="./src/patches/item-renewal.js?v=54"></script>
-    <script src="./src/patches/text-speed.js?v=54"></script>
-    <script src="./src/patches/modern-status.js?v=54"></script>
-    <script src="./src/patches/battle-critical.js?v=54"></script>
-    <script src="./src/patches/rng-generation.js?v=54"></script>
-    <script src="./src/patches/wild-natures.js?v=54"></script>
-    <script src="./src/patches/battle-weather.js?v=54"></script>
-    <script src="./src/patches/frame-rate.js?v=54"></script>
-    <script src="./src/patches/field-movement.js?v=54"></script>
-    <script src="./src/patches/field-misc.js?v=54"></script>
-    <script src="./src/patches/summary-screen.js?v=54"></script>
-    <script src="./src/patches/overworld-sprites.js?v=54"></script>
-    <script src="./src/patches/item-expansion.js?v=54"></script>
-    <script src="./src/patches/extra-tms.js?v=54"></script>
-    <script src="./app.js?v=54"></script>
-    <script src="./src/ui/init-ui.js?v=54"></script>
+    <script src="./src/core.js?v=58"></script>
+    <script src="./src/patches/registry.js?v=58"></script>
+    <script src="./src/patches/infrastructure.js?v=58"></script>
+    <script src="./src/patches/simple-sites.js?v=58"></script>
+    <script src="./src/patches/fairy-type.js?v=58"></script>
+    <script src="./vendor/armips/armips.js?v=58"></script>
+    <script src="./src/asm/armips-assembler.js?v=58"></script>
+    <script src="./src/asm/templates.js?v=58"></script>
+    <script src="./src/patches/infinite-candy.js?v=58"></script>
+    <script src="./src/patches/item-renewal.js?v=58"></script>
+    <script src="./src/patches/text-speed.js?v=58"></script>
+    <script src="./src/patches/modern-status.js?v=58"></script>
+    <script src="./src/patches/battle-critical.js?v=58"></script>
+    <script src="./src/patches/rng-generation.js?v=58"></script>
+    <script src="./src/patches/wild-natures.js?v=58"></script>
+    <script src="./src/patches/battle-weather.js?v=58"></script>
+    <script src="./src/patches/frame-rate.js?v=58"></script>
+    <script src="./src/patches/field-movement.js?v=58"></script>
+    <script src="./src/patches/field-misc.js?v=58"></script>
+    <script src="./src/patches/summary-screen.js?v=58"></script>
+    <script src="./src/patches/overworld-sprites.js?v=58"></script>
+    <script src="./src/patches/item-expansion.js?v=58"></script>
+    <script src="./src/patches/extra-tms.js?v=58"></script>
+    <script src="./app.js?v=58"></script>
+    <script src="./src/ui/init-ui.js?v=58"></script>
   </body>
 </html>

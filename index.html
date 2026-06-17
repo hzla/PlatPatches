@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=48" />
+    <link rel="stylesheet" href="./styles.css?v=53" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v48</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v53</div>
       </section>
 
       <section class="panel upload-panel">
@@ -48,6 +48,23 @@
                   <small class="patch-status" id="arm9ExpansionStatus">Load a ROM to check expansion status.</small>
                 </span>
               </label>
+
+              <div class="patch-card patch-card-config patch-card-wide">
+                <input id="itemExpansionPatch" type="checkbox" value="itemExpansion" />
+                <div class="patch-body">
+                  <label class="patch-title" for="itemExpansionPatch">
+                    <strong>Item Expansion</strong>
+                    <small>Creates new item IDs starting at 0x1D4 with optional expanded TM rows.</small>
+                  </label>
+                  <div class="item-expansion-config">
+                    <div class="item-expansion-toolbar">
+                      <small class="patch-status" id="itemExpansionStatus">Add at least one item row.</small>
+                      <button id="itemExpansionAddRow" class="secondary-button" type="button">Add row</button>
+                    </div>
+                    <div class="item-expansion-rows" id="itemExpansionRows"></div>
+                  </div>
+                </div>
+              </div>
 
               <div class="patch-card patch-card-config patch-card-wide">
                 <input id="customOverworldSpritesPatch" type="checkbox" value="customOverworldSprites" />
@@ -403,6 +420,23 @@
                   <small>TMs are no longer consumed after use.</small>
                 </span>
               </label>
+
+              <div class="patch-card patch-card-config patch-card-wide">
+                <input id="extraTmsPatch" type="checkbox" value="extraTMs" />
+                <div class="patch-body">
+                  <label class="patch-title" for="extraTmsPatch">
+                    <strong>Extra TMs</strong>
+                    <small>Adds configurable TMs in the TM/HM pocket using new expanded item IDs.</small>
+                  </label>
+                  <div class="extra-tm-config" id="extraTmConfig" hidden>
+                    <div class="extra-tm-toolbar">
+                      <small class="patch-status" id="extraTmStatus">60 Extra TMs configured.</small>
+                    </div>
+                    <datalist id="extraTmMoveOptions"></datalist>
+                    <div class="extra-tm-rows" id="extraTmRows"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -448,28 +482,30 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=48"></script>
-    <script src="./src/patches/registry.js?v=48"></script>
-    <script src="./src/patches/infrastructure.js?v=48"></script>
-    <script src="./src/patches/simple-sites.js?v=48"></script>
-    <script src="./src/patches/fairy-type.js?v=48"></script>
-    <script src="./vendor/armips/armips.js?v=48"></script>
-    <script src="./src/asm/armips-assembler.js?v=48"></script>
-    <script src="./src/asm/templates.js?v=48"></script>
-    <script src="./src/patches/infinite-candy.js?v=48"></script>
-    <script src="./src/patches/item-renewal.js?v=48"></script>
-    <script src="./src/patches/text-speed.js?v=48"></script>
-    <script src="./src/patches/modern-status.js?v=48"></script>
-    <script src="./src/patches/battle-critical.js?v=48"></script>
-    <script src="./src/patches/rng-generation.js?v=48"></script>
-    <script src="./src/patches/wild-natures.js?v=48"></script>
-    <script src="./src/patches/battle-weather.js?v=48"></script>
-    <script src="./src/patches/frame-rate.js?v=48"></script>
-    <script src="./src/patches/field-movement.js?v=48"></script>
-    <script src="./src/patches/field-misc.js?v=48"></script>
-    <script src="./src/patches/summary-screen.js?v=48"></script>
-    <script src="./src/patches/overworld-sprites.js?v=48"></script>
-    <script src="./app.js?v=48"></script>
-    <script src="./src/ui/init-ui.js?v=48"></script>
+    <script src="./src/core.js?v=53"></script>
+    <script src="./src/patches/registry.js?v=53"></script>
+    <script src="./src/patches/infrastructure.js?v=53"></script>
+    <script src="./src/patches/simple-sites.js?v=53"></script>
+    <script src="./src/patches/fairy-type.js?v=53"></script>
+    <script src="./vendor/armips/armips.js?v=53"></script>
+    <script src="./src/asm/armips-assembler.js?v=53"></script>
+    <script src="./src/asm/templates.js?v=53"></script>
+    <script src="./src/patches/infinite-candy.js?v=53"></script>
+    <script src="./src/patches/item-renewal.js?v=53"></script>
+    <script src="./src/patches/text-speed.js?v=53"></script>
+    <script src="./src/patches/modern-status.js?v=53"></script>
+    <script src="./src/patches/battle-critical.js?v=53"></script>
+    <script src="./src/patches/rng-generation.js?v=53"></script>
+    <script src="./src/patches/wild-natures.js?v=53"></script>
+    <script src="./src/patches/battle-weather.js?v=53"></script>
+    <script src="./src/patches/frame-rate.js?v=53"></script>
+    <script src="./src/patches/field-movement.js?v=53"></script>
+    <script src="./src/patches/field-misc.js?v=53"></script>
+    <script src="./src/patches/summary-screen.js?v=53"></script>
+    <script src="./src/patches/overworld-sprites.js?v=53"></script>
+    <script src="./src/patches/item-expansion.js?v=53"></script>
+    <script src="./src/patches/extra-tms.js?v=53"></script>
+    <script src="./app.js?v=53"></script>
+    <script src="./src/ui/init-ui.js?v=53"></script>
   </body>
 </html>

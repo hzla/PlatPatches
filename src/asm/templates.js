@@ -466,10 +466,960 @@
 `;
   }
 
+  function extraTmsHelper({
+    helperAddress,
+    itemIds,
+    moveIds,
+    expandedCompatMasks = [],
+    sTmHmMovesAddress,
+    fontDrawNumberAddress,
+    fontDrawHpAddress,
+    bagPrintItemCountAddress,
+    drawHmIconAddress,
+    maxRows = 60,
+  }) {
+    const tableAddress = helperAddress + 0x500;
+    const compatMaskAddress = tableAddress + 8 + maxRows * 4;
+    const paddedItemIds = Array.from({ length: maxRows }, (_, index) =>
+      index < itemIds.length ? itemIds[index] : 0xffff
+    );
+    const paddedMoveIds = Array.from({ length: maxRows }, (_, index) =>
+      index < moveIds.length ? moveIds[index] : 0x0000
+    );
+    const compatMaskWords = expandedCompatMasks
+      .map((mask) => `  .word 0x${(mask >>> 0).toString(16).toUpperCase().padStart(8, "0")}`)
+      .join("\n");
+    const itemHalfwords = paddedItemIds
+      .map((itemId) => `  .halfword 0x${itemId.toString(16).toUpperCase().padStart(4, "0")}`)
+      .join("\n");
+    const moveHalfwords = paddedMoveIds
+      .map((moveId) => `  .halfword 0x${moveId.toString(16).toUpperCase().padStart(4, "0")}`)
+      .join("\n");
+
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r4}
+  ldr r4,[pc,0x48]
+  ldr r1,[r4]
+  add r4,8
+  lsl r1,r1,1
+  mov r2,0
+@@is_scan:
+  cmp r2,r1
+  bcs @@is_vanilla
+  ldrh r3,[r4,r2]
+  cmp r0,r3
+  beq @@is_extra
+  add r2,2
+  b @@is_scan
+@@is_extra:
+  mov r0,1
+  pop {r4}
+  bx lr
+@@is_vanilla:
+  mov r1,0x52
+  lsl r1,r1,2
+  cmp r0,r1
+  bcc @@is_false
+  add r1,0x63
+  cmp r0,r1
+  bhi @@is_false
+  mov r0,1
+  pop {r4}
+  bx lr
+@@is_false:
+  mov r0,0
+  pop {r4}
+  bx lr
+.org ${hex32(helperAddress + 0x4c)}
+  .word ${hex32(tableAddress)}
+
+.org ${hex32(helperAddress + 0x80)}
+  push {r4}
+  ldr r4,[pc,0x48]
+  ldr r1,[r4]
+  add r4,8
+  lsl r1,r1,1
+  mov r2,0
+@@move_scan:
+  cmp r2,r1
+  bcs @@move_vanilla
+  ldrh r3,[r4,r2]
+  cmp r0,r3
+  beq @@move_extra
+  add r2,2
+  b @@move_scan
+@@move_extra:
+  add r4,${maxRows * 2}
+  ldrh r0,[r4,r2]
+  pop {r4}
+  bx lr
+@@move_vanilla:
+  sub r4,8
+  mov r2,0x52
+  lsl r2,r2,2
+  cmp r0,r2
+  bcc @@move_none
+  mov r1,r2
+  add r1,0x63
+  cmp r0,r1
+  bhi @@move_none
+  sub r0,r0,r2
+  lsl r0,r0,16
+  lsr r1,r0,15
+  ldr r0,[r4,4]
+  ldrh r0,[r0,r1]
+  pop {r4}
+  bx lr
+@@move_none:
+  mov r0,0
+  pop {r4}
+  bx lr
+.org ${hex32(helperAddress + 0xcc)}
+  .word ${hex32(tableAddress)}
+
+.org ${hex32(helperAddress + 0x100)}
+  push {r4}
+  ldr r4,[pc,0x48]
+  ldr r1,[r4]
+  add r4,8
+  lsl r1,r1,1
+  mov r2,0
+@@number_scan:
+  cmp r2,r1
+  bcs @@number_vanilla
+  ldrh r3,[r4,r2]
+  cmp r0,r3
+  beq @@number_extra
+  add r2,2
+  b @@number_scan
+@@number_extra:
+  mov r0,r2
+  lsr r0,r0,1
+  add r0,0x64
+  pop {r4}
+  bx lr
+@@number_vanilla:
+  mov r2,0x52
+  lsl r2,r2,2
+  cmp r0,r2
+  bcc @@number_none
+  mov r1,r2
+  add r1,0x63
+  cmp r0,r1
+  bhi @@number_none
+  sub r0,r0,r2
+  lsl r0,r0,24
+  lsr r0,r0,24
+  pop {r4}
+  bx lr
+@@number_none:
+  mov r0,0
+  pop {r4}
+  bx lr
+.org ${hex32(helperAddress + 0x14c)}
+  .word ${hex32(tableAddress)}
+
+.org ${hex32(helperAddress + 0x180)}
+  push {r3,r4,r5,r6,r7,lr}
+  sub sp,0x10
+  mov r5,r0
+  mov r6,r1
+  mov r4,r2
+  ldrh r0,[r6]
+  ldr r7,=${hex32(tableAddress)}
+  ldr r1,[r7]
+  add r7,8
+  mov r2,0
+@@display_scan:
+  cmp r2,r1
+  bcs @@display_vanilla
+  lsl r3,r2,1
+  ldrh r3,[r7,r3]
+  cmp r0,r3
+  beq @@display_extra
+  add r2,1
+  b @@display_scan
+@@display_extra:
+  mov r0,r2
+  add r0,0x5D
+  mov r3,2
+  cmp r0,100
+  bcc @@draw_tm
+  mov r3,3
+@@draw_tm:
+  mov r2,r0
+  b @@draw_tm_number
+@@display_vanilla:
+  ldrh r2,[r6]
+  mov r0,0x69
+  lsl r0,r0,2
+  cmp r2,r0
+  bcs @@display_hm
+  mov r1,r0
+  sub r1,0x5D
+  sub r2,r2,r1
+  mov r3,2
+@@draw_tm_number:
+  mov r0,2
+  str r0,[sp,0]
+  add r0,r5,4
+  str r0,[sp,4]
+  mov r0,0
+  str r0,[sp,8]
+  add r0,r4,5
+  str r0,[sp,12]
+  mov r0,0x69
+  lsl r0,r0,2
+  sub r0,0x94
+  ldr r0,[r5,r0]
+  mov r1,2
+  bl ${hex32(fontDrawNumberAddress)}
+  ldrh r1,[r6,2]
+  ldr r3,=${hex32(0x00010200)}
+  mov r0,r5
+  mov r2,r4
+  bl ${hex32(bagPrintItemCountAddress)}
+  add sp,0x10
+  pop {r3,r4,r5,r6,r7,pc}
+@@display_hm:
+  sub r1,r2,r0
+  add r1,1
+  add r0,r5,4
+  str r0,[sp,0]
+  mov r0,16
+  str r0,[sp,4]
+  add r0,r4,5
+  str r0,[sp,8]
+  mov r0,0x69
+  lsl r0,r0,2
+  sub r0,0x94
+  ldr r0,[r5,r0]
+  mov r2,2
+  mov r3,1
+  bl ${hex32(fontDrawHpAddress)}
+  mov r0,r5
+  mov r1,r4
+  bl ${hex32(drawHmIconAddress)}
+  add sp,0x10
+  pop {r3,r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(helperAddress + 0x280)}
+  cmp r2,0x80
+  bcc @@can_learn_vanilla
+  ldr r3,=0x000001EE
+  cmp r0,r3
+  beq @@can_learn_false
+  cmp r2,0xA0
+  bcc @@can_learn_expanded
+@@can_learn_false:
+  mov r0,0
+  bx lr
+@@can_learn_vanilla:
+  push {r4,lr}
+  ldr r3,=0x000001EE
+  cmp r0,r3
+  bne @@can_learn_continue
+  mov r0,0
+  pop {r4,pc}
+@@can_learn_continue:
+  ldr r3,=0x02077FF1
+  bx r3
+@@can_learn_expanded:
+  push {r4,r5,lr}
+  sub r2,0x80
+  mov r3,1
+  lsl r3,r2
+  mov r4,r0
+  cmp r1,0
+  beq @@expanded_lookup
+  ldr r5,=0x00000182
+  cmp r4,r5
+  bne @@check_wormadam
+  cmp r1,3
+  bhi @@expanded_lookup
+  ldr r4,=495
+  add r4,r1
+  b @@expanded_lookup
+@@check_wormadam:
+  ldr r5,=0x0000019D
+  cmp r4,r5
+  bne @@check_giratina
+  cmp r1,2
+  bhi @@expanded_lookup
+  ldr r4,=498
+  add r4,r1
+  b @@expanded_lookup
+@@check_giratina:
+  ldr r5,=0x000001E7
+  cmp r4,r5
+  bne @@check_shaymin
+  cmp r1,1
+  bhi @@expanded_lookup
+  ldr r4,=500
+  add r4,r1
+  b @@expanded_lookup
+@@check_shaymin:
+  ldr r5,=0x000001EC
+  cmp r4,r5
+  bne @@check_rotom
+  cmp r1,1
+  bhi @@expanded_lookup
+  ldr r4,=501
+  add r4,r1
+  b @@expanded_lookup
+@@check_rotom:
+  ldr r5,=0x000001DF
+  cmp r4,r5
+  bne @@expanded_lookup
+  cmp r1,5
+  bhi @@expanded_lookup
+  ldr r4,=502
+  add r4,r1
+@@expanded_lookup:
+  ldr r5,=${hex32(compatMaskAddress)}
+  ldr r2,=${hex32(expandedCompatMasks.length)}
+  cmp r4,r2
+  bcs @@expanded_false
+  lsl r4,r4,2
+  ldr r0,[r5,r4]
+  tst r0,r3
+  beq @@expanded_false
+  mov r0,1
+  pop {r4,r5,pc}
+@@expanded_false:
+  mov r0,0
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(tableAddress)}
+  .word ${hex32(itemIds.length)}
+  .word ${hex32(sTmHmMovesAddress)}
+${itemHalfwords}
+${moveHalfwords}
+${compatMaskWords}
+.close
+`;
+  }
+
+  function itemExpansionHelper({
+    helperAddress,
+    firstItemId,
+    maxVanillaItemId,
+    itemArchiveIdsAddress,
+    narcAllocWholeMemberAddress,
+    itemIsTmHmAddress,
+    itemLoadParamAddress,
+    saveDataPtrAddress,
+    saveDataSaveTableAddress,
+    saveDataSetChecksumAddress,
+    overflowStorageSaveTableId = 30,
+    overflowStorageOffset = 0xcfc,
+    bagContextNewAddress,
+    bagContextInitPocketAddress,
+    pocketSortEmptyAddress,
+    entries,
+    maxRows = 128,
+  }) {
+    const itemLoadAddress = helperAddress + 0x120;
+    const tableAddress = helperAddress + 0x280;
+    const bagContextCreateAddress = helperAddress + 0x700;
+    const bagGetPocketForItemAddress = helperAddress + 0x860;
+    const storageHelperAddress = helperAddress + 0x980;
+    const migrateBagAddress = helperAddress + 0xa40;
+    const migratePocketAddress = helperAddress + 0xb20;
+    const storageInsertAddress = helperAddress + 0xbe0;
+    const tmhmScratchAddress = helperAddress + 0xc40;
+    const paddedEntries = Array.from({ length: maxRows }, (_, index) =>
+      index < entries.length
+        ? entries[index]
+        : { data: 0, icon: 707, palette: 708, gen3: 0 }
+    );
+    const tableRows = paddedEntries
+      .map(
+        (entry) =>
+          `  .halfword 0x${entry.data.toString(16).toUpperCase().padStart(4, "0")}, 0x${entry.icon
+            .toString(16)
+            .toUpperCase()
+            .padStart(4, "0")}, 0x${entry.palette
+            .toString(16)
+            .toUpperCase()
+            .padStart(4, "0")}, 0x${entry.gen3.toString(16).toUpperCase().padStart(4, "0")}`
+      )
+      .join("\n");
+
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  cmp r1,3
+  bls @@check_special
+  mov r0,0
+  bx lr
+@@check_special:
+  cmp r0,0
+  beq @@item_none
+  ldr r2,=0x0000FFFF
+  cmp r0,r2
+  beq @@item_return
+  ldr r2,=${hex32(firstItemId)}
+  cmp r0,r2
+  bcc @@vanilla
+  sub r3,r0,r2
+  ldr r2,=${hex32(entries.length)}
+  cmp r3,r2
+  bcc @@expanded
+  b @@invalid
+@@expanded:
+  ldr r2,=${hex32(tableAddress + 8)}
+  lsl r3,r3,3
+  add r2,r3
+  lsl r1,r1,1
+  ldrh r0,[r2,r1]
+  bx lr
+@@vanilla:
+  ldr r2,=${hex32(maxVanillaItemId)}
+  cmp r0,r2
+  bhi @@invalid
+  ldr r2,=${hex32(itemArchiveIdsAddress)}
+  lsl r3,r0,3
+  add r2,r3
+  lsl r1,r1,1
+  ldrh r0,[r2,r1]
+  bx lr
+@@item_none:
+  cmp r1,1
+  beq @@none_icon
+  cmp r1,2
+  beq @@none_palette
+  mov r0,0
+  bx lr
+@@none_icon:
+  ldr r0,=707
+  bx lr
+@@none_palette:
+  ldr r0,=708
+  bx lr
+@@item_return:
+  cmp r1,1
+  beq @@return_icon
+  cmp r1,2
+  beq @@return_palette
+  mov r0,0
+  bx lr
+@@return_icon:
+  ldr r0,=709
+  bx lr
+@@return_palette:
+  ldr r0,=710
+  bx lr
+@@invalid:
+  mov r0,0
+  bx lr
+  .pool
+
+.org ${hex32(itemLoadAddress)}
+  push {r4,r5,r6,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  cmp r5,2
+  bls @@load_type_ok
+  mov r0,0
+  pop {r4,r5,r6,pc}
+@@load_type_ok:
+  ldr r0,=${hex32(firstItemId)}
+  cmp r4,r0
+  bcc @@load_check_vanilla
+  sub r1,r4,r0
+  ldr r0,=${hex32(entries.length)}
+  cmp r1,r0
+  bcc @@load_valid_item
+  b @@load_item_none
+@@load_check_vanilla:
+  ldr r0,=${hex32(maxVanillaItemId)}
+  cmp r4,r0
+  bls @@load_valid_item
+@@load_item_none:
+  mov r4,0
+@@load_valid_item:
+  mov r0,r4
+  mov r1,r5
+  bl ${hex32(helperAddress)}
+  mov r1,r0
+  cmp r5,0
+  bne @@load_icon_archive
+  mov r0,15
+  b @@load_call
+@@load_icon_archive:
+  mov r0,16
+@@load_call:
+  mov r2,r6
+  bl ${hex32(narcAllocWholeMemberAddress)}
+  pop {r4,r5,r6,pc}
+  .pool
+
+.org ${hex32(bagContextCreateAddress)}
+  push {r3,r4,r5,r6,r7,lr}
+  str r2,[sp]
+  mov r5,r0
+  mov r7,r1
+  lsl r0,r2,24
+  lsr r0,r0,24
+  bl ${hex32(bagContextNewAddress)}
+  mov r6,r0
+  ldrb r0,[r7]
+  mov r4,0
+  cmp r0,0xFF
+  beq @@ctx_done
+@@ctx_loop:
+  ldrb r2,[r7,r4]
+  cmp r2,7
+  bhi @@ctx_next
+  cmp r2,3
+  beq @@ctx_tmhms
+  cmp r2,0
+  beq @@ctx_items
+  cmp r2,1
+  beq @@ctx_medicine
+  cmp r2,2
+  beq @@ctx_balls
+  cmp r2,4
+  beq @@ctx_berries
+  cmp r2,5
+  beq @@ctx_mail
+  cmp r2,6
+  beq @@ctx_battle_items
+  b @@ctx_key_items
+@@ctx_items:
+  mov r1,r5
+  b @@ctx_init
+@@ctx_medicine:
+  ldr r1,=0x0000051C
+  add r1,r5,r1
+  b @@ctx_init
+@@ctx_balls:
+  ldr r1,=0x000006BC
+  add r1,r5,r1
+  b @@ctx_init
+@@ctx_tmhms:
+  mov r0,r5
+  ldr r1,[sp]
+  bl @@build_tmhm_scratch
+  mov r1,r0
+  mov r2,3
+  b @@ctx_init
+@@ctx_berries:
+  ldr r1,=0x000005BC
+  add r1,r5,r1
+  b @@ctx_init
+@@ctx_mail:
+  ldr r1,=0x000004EC
+  add r1,r5,r1
+  b @@ctx_init
+@@ctx_battle_items:
+  ldr r1,=0x000006F8
+  add r1,r5,r1
+  b @@ctx_init
+@@ctx_key_items:
+  ldr r1,=0x00000294
+  add r1,r5,r1
+@@ctx_init:
+  mov r0,r6
+  lsl r3,r4,24
+  lsr r3,r3,24
+  bl ${hex32(bagContextInitPocketAddress)}
+@@ctx_next:
+  add r4,1
+  ldrb r0,[r7,r4]
+  cmp r0,0xFF
+  bne @@ctx_loop
+@@ctx_done:
+  mov r0,r6
+  pop {r3,r4,r5,r6,r7,pc}
+
+@@build_tmhm_scratch:
+  push {r4,r5,r6,r7,lr}
+  sub sp,12
+  str r0,[sp]
+  str r1,[sp,4]
+  .align 4
+  ldr r4,[pc,0]
+  b @@scratch_ptr_loaded
+  .word ${hex32(tmhmScratchAddress)}
+@@scratch_ptr_loaded:
+  mov r0,r4
+  mov r1,0
+  ldr r2,=0x00000280
+@@scratch_clear:
+  str r1,[r0]
+  add r0,4
+  sub r2,4
+  bne @@scratch_clear
+  bl ${hex32(storageHelperAddress)}
+  str r0,[sp,8]
+  ldr r0,=0x0000035C
+  ldr r1,=${hex32(tmhmScratchAddress)}
+  ldr r2,[sp]
+  add r0,r0,r2
+  mov r2,100
+@@scratch_copy_vanilla:
+  ldr r3,[r0]
+  str r3,[r1]
+  add r0,4
+  add r1,4
+  sub r2,1
+  bne @@scratch_copy_vanilla
+  mov r7,0
+@@scratch_find_append:
+  cmp r7,100
+  bcs @@scratch_have_append
+  lsl r1,r7,2
+  add r1,r4,r1
+  ldrh r2,[r1]
+  cmp r2,0
+  beq @@scratch_have_append
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@scratch_have_append
+  add r7,1
+  b @@scratch_find_append
+@@scratch_have_append:
+  mov r5,0
+@@scratch_scan_overflow:
+  cmp r5,0x80
+  bcs @@scratch_done
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldrh r0,[r1]
+  cmp r0,0
+  beq @@scratch_next_overflow
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@scratch_next_overflow
+  bl ${hex32(itemIsTmHmAddress)}
+  cmp r0,0
+  beq @@scratch_next_overflow
+  cmp r7,160
+  bcs @@scratch_done
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldr r0,[r1]
+  lsl r2,r7,2
+  add r2,r4,r2
+  str r0,[r2]
+  add r7,1
+@@scratch_next_overflow:
+  add r5,1
+  b @@scratch_scan_overflow
+@@scratch_done:
+  mov r0,r4
+  add sp,12
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(bagGetPocketForItemAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,4
+  mov r4,r0
+  mov r5,r2
+  mov r6,r3
+  mov r7,r1
+  mov r0,r7
+  mov r1,5
+  ldr r2,[sp,0x18]
+  bl ${hex32(itemLoadParamAddress)}
+  str r0,[sp]
+  ldr r1,=${hex32(firstItemId)}
+  cmp r7,r1
+  bcc @@pocket_vanilla
+  sub r2,r7,r1
+  ldr r1,=${hex32(entries.length)}
+  cmp r2,r1
+  bcs @@pocket_vanilla
+  mov r0,r7
+  bl ${hex32(itemIsTmHmAddress)}
+  cmp r0,0
+  beq @@pocket_expanded_storage
+  mov r0,3
+  str r0,[sp]
+@@pocket_expanded_storage:
+  bl ${hex32(storageHelperAddress)}
+  str r0,[r5]
+  mov r0,0x80
+  str r0,[r6]
+  ldr r0,[sp]
+  add sp,4
+  pop {r4,r5,r6,r7,pc}
+@@pocket_vanilla:
+  ldr r0,[sp]
+  cmp r0,7
+  bhi @@pocket_return
+  cmp r0,0
+  beq @@pocket_items
+  cmp r0,1
+  beq @@pocket_medicine
+  cmp r0,2
+  beq @@pocket_balls
+  cmp r0,3
+  beq @@pocket_tmhms
+  cmp r0,4
+  beq @@pocket_berries
+  cmp r0,5
+  beq @@pocket_mail
+  cmp r0,6
+  beq @@pocket_battle_items
+  b @@pocket_key_items
+@@pocket_items:
+  mov r1,r4
+  str r1,[r5]
+  mov r1,0xA5
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_medicine:
+  ldr r1,=0x0000051C
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x28
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_balls:
+  ldr r1,=0x000006BC
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x0F
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_tmhms:
+  ldr r1,=0x0000035C
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x64
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_berries:
+  ldr r1,=0x000005BC
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x40
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_mail:
+  ldr r1,=0x000004EC
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x0C
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_battle_items:
+  ldr r1,=0x000006F8
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x1E
+  str r1,[r6]
+  b @@pocket_return
+@@pocket_key_items:
+  ldr r1,=0x00000294
+  add r1,r4,r1
+  str r1,[r5]
+  mov r1,0x32
+  str r1,[r6]
+@@pocket_return:
+  ldr r0,[sp]
+  add sp,4
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(storageHelperAddress)}
+  push {r4,lr}
+  bl ${hex32(saveDataPtrAddress)}
+  mov r1,${overflowStorageSaveTableId}
+  bl ${hex32(saveDataSaveTableAddress)}
+  ldr r1,=${hex32(overflowStorageOffset)}
+  add r4,r0,r1
+  ldr r0,[r4]
+  ldr r1,=0x4D455449
+  cmp r0,r1
+  bne @@storage_init
+  ldr r0,[r4,4]
+  ldr r1,=0x32474142
+  cmp r0,r1
+  beq @@storage_ready
+@@storage_init:
+  mov r0,r4
+  mov r1,0
+  ldr r2,=0x00000300
+@@storage_clear:
+  str r1,[r0]
+  add r0,4
+  sub r2,4
+  bne @@storage_clear
+  ldr r0,=0x4D455449
+  str r0,[r4]
+  ldr r0,=0x32474142
+  str r0,[r4,4]
+  ldr r0,=${hex32(firstItemId)}
+  strh r0,[r4,8]
+  mov r0,0x80
+  strh r0,[r4,10]
+@@storage_ready:
+  mov r0,${overflowStorageSaveTableId}
+  bl ${hex32(saveDataSetChecksumAddress)}
+  mov r0,r4
+  add r0,0x20
+  pop {r4,pc}
+  .pool
+
+.org ${hex32(migrateBagAddress)}
+  push {r3,r4,r5,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r0,r4
+  mov r1,0xA5
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x00000294
+  add r0,r4,r0
+  mov r1,0x32
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x0000035C
+  add r0,r4,r0
+  mov r1,0x64
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x000004EC
+  add r0,r4,r0
+  mov r1,0x0C
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x0000051C
+  add r0,r4,r0
+  mov r1,0x28
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x000005BC
+  add r0,r4,r0
+  mov r1,0x40
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x000006BC
+  add r0,r4,r0
+  mov r1,0x0F
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  ldr r0,=0x000006F8
+  add r0,r4,r0
+  mov r1,0x1E
+  mov r2,r5
+  bl ${hex32(migratePocketAddress)}
+  mov r0,r5
+  pop {r3,r4,r5,pc}
+  .pool
+
+.org ${hex32(migratePocketAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,12
+  str r0,[sp]
+  str r1,[sp,4]
+  str r2,[sp,8]
+  mov r4,0
+@@migrate_pocket_loop:
+  ldr r0,[sp,4]
+  cmp r4,r0
+  bcs @@migrate_pocket_done
+  ldr r5,[sp]
+  lsl r6,r4,2
+  add r5,r5,r6
+  ldrh r6,[r5]
+  cmp r6,0
+  beq @@migrate_pocket_next
+  ldrh r7,[r5,2]
+  cmp r7,0
+  beq @@migrate_pocket_next
+  ldr r0,=${hex32(firstItemId)}
+  cmp r6,r0
+  bcc @@migrate_pocket_next
+  sub r1,r6,r0
+  ldr r0,=${hex32(entries.length)}
+  cmp r1,r0
+  bcs @@migrate_pocket_next
+  ldr r0,[sp,8]
+  mov r1,r6
+  mov r2,r7
+  bl ${hex32(storageInsertAddress)}
+  mov r0,0
+  str r0,[r5]
+@@migrate_pocket_next:
+  add r4,1
+  b @@migrate_pocket_loop
+@@migrate_pocket_done:
+  ldr r0,[sp]
+  ldr r1,[sp,4]
+  bl ${hex32(pocketSortEmptyAddress)}
+  add sp,12
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(storageInsertAddress)}
+  push {r4,r5,r6,r7,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  mov r7,0
+@@storage_insert_loop:
+  cmp r7,0x80
+  bcs @@storage_insert_done
+  lsl r0,r7,2
+  add r0,r4,r0
+  ldrh r1,[r0]
+  cmp r1,r5
+  beq @@storage_insert_add
+  cmp r1,0
+  beq @@storage_insert_empty
+  add r7,1
+  b @@storage_insert_loop
+@@storage_insert_empty:
+  strh r5,[r0]
+  strh r6,[r0,2]
+  b @@storage_insert_done
+@@storage_insert_add:
+  ldrh r1,[r0,2]
+  add r1,r1,r6
+  ldr r2,=0x0000FFFF
+  cmp r1,r2
+  bls @@storage_insert_store
+  mov r1,r2
+@@storage_insert_store:
+  strh r1,[r0,2]
+@@storage_insert_done:
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(tableAddress)}
+  .halfword 0x${firstItemId.toString(16).toUpperCase().padStart(4, "0")}
+  .halfword 0x${entries.length.toString(16).toUpperCase().padStart(4, "0")}
+  .halfword 0x${maxRows.toString(16).toUpperCase().padStart(4, "0")}
+  .halfword 0x0000
+${tableRows}
+
+.org ${hex32(tmhmScratchAddress)}
+  .fill 0x00000280, 0xFD
+.close
+`;
+  }
+
   return {
+    extraTmsHelper,
     infiniteCandyBagRemovalHelper,
     infiniteCandyChainHelper,
     infiniteCandyPocketRemovalHelper,
+    itemExpansionHelper,
     itemRenewalPartyHeldItemHelper,
     itemRenewalWritebackHelper,
     modernBurnHelper,

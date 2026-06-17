@@ -530,6 +530,209 @@ function narcMemberBytes(narc, memberId) {
   return narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end);
 }
 
+function encryptMessageEntryOffset(entryID, bankKey, offset, length) {
+  let key = (bankKey * 765 * (entryID + 1)) & 0xffff;
+  key = (key | (key << 16)) >>> 0;
+  return { offset: (offset ^ key) >>> 0, length: (length ^ key) >>> 0 };
+}
+
+function encryptedPlatinumString(text, entryID, label = "Message text") {
+  const codes = [];
+
+  function pushCode(code) {
+    codes.push(code & 0xffff);
+  }
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.startsWith("{COLOR ", i)) {
+      const end = text.indexOf("}", i);
+      if (end === -1) {
+        throw new PatchError(`${label} has an unterminated COLOR command.`);
+      }
+      const value = Number(text.slice(i + 7, end));
+      if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+        throw new PatchError(`${label} has an invalid COLOR command.`);
+      }
+      pushCode(0xfffe);
+      pushCode(0xff00);
+      pushCode(1);
+      pushCode(value);
+      i = end;
+      continue;
+    }
+
+    const ch = text[i];
+    const codePoint = text.charCodeAt(i);
+    if (ch >= "0" && ch <= "9") {
+      pushCode(0x0121 + (codePoint - 48));
+    } else if (ch >= "A" && ch <= "Z") {
+      pushCode(0x012b + (codePoint - 65));
+    } else if (ch >= "a" && ch <= "z") {
+      pushCode(0x0145 + (codePoint - 97));
+    } else if (ch === " ") {
+      pushCode(0x01de);
+    } else if (ch === ",") {
+      pushCode(0x01ad);
+    } else if (ch === ".") {
+      pushCode(0x01ae);
+    } else if (ch === "-") {
+      pushCode(0x01be);
+    } else if (ch === "\n") {
+      pushCode(0xe000);
+    } else if (ch === "\r") {
+      pushCode(0x25bc);
+    } else if (ch === "\f") {
+      pushCode(0x25bd);
+    } else if (ch === "é") {
+      pushCode(0x0188);
+    } else if (ch === "'" || ch === "’") {
+      pushCode(0x01b3);
+    } else {
+      throw new PatchError(`${label} contains unsupported character "${ch}".`);
+    }
+  }
+  pushCode(0xffff);
+
+  let key = ((entryID + 1) * 596947) & 0xffff;
+  const out = new Uint8Array(codes.length * 2);
+  for (let i = 0; i < codes.length; i += 1) {
+    writeU16(out, i * 2, codes[i] ^ key);
+    key = (key + 18749) & 0xffff;
+  }
+  return out;
+}
+
+function replaceMessageBankEntries(bank, replacements, options = {}) {
+  const replacementMap = new Map(replacements);
+  const count = readU16(bank, 0);
+  const bankKey = readU16(bank, 2);
+  let newCount = count;
+
+  for (const entryID of replacementMap.keys()) {
+    if (!Number.isInteger(entryID) || entryID < 0 || entryID > 0xffff) {
+      throw new PatchError(`Message bank replacement entry ${entryID} is invalid.`);
+    }
+    newCount = Math.max(newCount, entryID + 1);
+  }
+
+  const chunks = [];
+  for (let i = 0; i < newCount; i += 1) {
+    if (replacementMap.has(i)) {
+      chunks.push(encryptedPlatinumString(String(replacementMap.get(i)), i, options.label || "Message text"));
+      continue;
+    }
+    if (i >= count) {
+      chunks.push(encryptedPlatinumString(options.fillerText || "", i, options.label || "Message text"));
+      continue;
+    }
+
+    const entryAt = 4 + i * 8;
+    const decoded = encryptMessageEntryOffset(i, bankKey, readU32(bank, entryAt), readU32(bank, entryAt + 4));
+    const size = decoded.length * 2;
+    if (decoded.offset + size > bank.length) {
+      throw new PatchError("Message bank entry points outside the message bank.");
+    }
+    chunks.push(bank.slice(decoded.offset, decoded.offset + size));
+  }
+
+  const totalSize = 4 + newCount * 8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(totalSize);
+  writeU16(out, 0, newCount);
+  writeU16(out, 2, bankKey);
+
+  let cursor = 4 + newCount * 8;
+  for (let i = 0; i < newCount; i += 1) {
+    const entry = encryptMessageEntryOffset(i, bankKey, cursor, chunks[i].length / 2);
+    writeU32(out, 4 + i * 8, entry.offset);
+    writeU32(out, 4 + i * 8 + 4, entry.length);
+    out.set(chunks[i], cursor);
+    cursor += chunks[i].length;
+  }
+  return out;
+}
+
+function decodePlatinumChar(code) {
+  if (code >= 0x0121 && code <= 0x012a) {
+    return String.fromCharCode(48 + code - 0x0121);
+  }
+  if (code >= 0x012b && code <= 0x0144) {
+    return String.fromCharCode(65 + code - 0x012b);
+  }
+  if (code >= 0x0145 && code <= 0x015e) {
+    return String.fromCharCode(97 + code - 0x0145);
+  }
+  switch (code) {
+    case 0x0188:
+      return "é";
+    case 0x01ad:
+      return ",";
+    case 0x01ae:
+      return ".";
+    case 0x01b3:
+      return "'";
+    case 0x01be:
+      return "-";
+    case 0x01de:
+      return " ";
+    case 0xe000:
+      return "\n";
+    case 0x25bc:
+      return "\r";
+    case 0x25bd:
+      return "\f";
+    default:
+      return "";
+  }
+}
+
+function decryptedPlatinumString(bytes, entryID) {
+  let key = ((entryID + 1) * 596947) & 0xffff;
+  const codes = [];
+  for (let offset = 0; offset + 1 < bytes.length; offset += 2) {
+    const code = readU16(bytes, offset) ^ key;
+    key = (key + 18749) & 0xffff;
+    if (code === 0xffff) {
+      break;
+    }
+    codes.push(code);
+  }
+
+  let text = "";
+  for (let i = 0; i < codes.length; i += 1) {
+    if (codes[i] === 0xfffe && codes[i + 1] === 0xff00 && codes[i + 2] === 1) {
+      text += `{COLOR ${codes[i + 3] || 0}}`;
+      i += 3;
+      continue;
+    }
+    text += decodePlatinumChar(codes[i]);
+  }
+  return text;
+}
+
+function messageBankEntryText(bank, entryID) {
+  const count = readU16(bank, 0);
+  const bankKey = readU16(bank, 2);
+  if (entryID < 0 || entryID >= count) {
+    throw new PatchError(`Message bank has no entry ${entryID}.`);
+  }
+  const entryAt = 4 + entryID * 8;
+  const decoded = encryptMessageEntryOffset(entryID, bankKey, readU32(bank, entryAt), readU32(bank, entryAt + 4));
+  const size = decoded.length * 2;
+  if (decoded.offset + size > bank.length) {
+    throw new PatchError("Message bank entry points outside the message bank.");
+  }
+  return decryptedPlatinumString(bank.slice(decoded.offset, decoded.offset + size), entryID);
+}
+
+function messageBankEntries(bank) {
+  const count = readU16(bank, 0);
+  const entries = [];
+  for (let entryID = 0; entryID < count; entryID += 1) {
+    entries.push(messageBankEntryText(bank, entryID));
+  }
+  return entries;
+}
+
 function asciiBytes(text) {
   const out = new Uint8Array(text.length);
   for (let i = 0; i < text.length; i += 1) {
@@ -832,6 +1035,12 @@ class SyntheticOverlayAllocator {
     replaceRomFileAllowGrowth,
     narcMemberLength,
     narcMemberBytes,
+    encryptMessageEntryOffset,
+    encryptedPlatinumString,
+    decryptedPlatinumString,
+    messageBankEntryText,
+    messageBankEntries,
+    replaceMessageBankEntries,
     asciiBytes,
     align,
     findAlignedZeroRun,

@@ -185,16 +185,40 @@
     throw new Error("PlatinumPatcherOverworldSpritePatches failed to load.");
   }
 
+  const itemExpansionPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/item-expansion.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherItemExpansionPatches
+        : undefined;
+  if (!itemExpansionPatches) {
+    throw new Error("PlatinumPatcherItemExpansionPatches failed to load.");
+  }
+
+  const extraTmPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/extra-tms.js")(core, itemExpansionPatches)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherExtraTmPatches
+        : undefined;
+  if (!extraTmPatches) {
+    throw new Error("PlatinumPatcherExtraTmPatches failed to load.");
+  }
+
   const { createPatchRegistry } = registryModule;
   const {
     PatchError,
     hex,
     dsPreArm9ExpansionStatus,
     findFileByPath,
+    messageBankEntries,
+    narcMemberBytes,
     parseNarc,
   } = core;
   const BASE_MMODEL_MEMBER_COUNT = 470;
   const MMODEL_NARC_PATH = "data/mmodel/mmodel.narc";
+  const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
+  const MOVE_NAMES_MESSAGE_MEMBER = 647;
 
   const PATCHES = {
     arm9Expansion: "DSPRE ARM9 expansion",
@@ -225,6 +249,8 @@
     forgettableHMs: "Forgettable HMs",
     instantPokeradar: "Instant Pokeradar recharge",
     infiniteTMs: "Infinite TMs",
+    itemExpansion: "Item Expansion",
+    extraTMs: "Extra TMs",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
     instantText: "Force fast text",
@@ -233,7 +259,7 @@
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
   };
-  const APP_VERSION = "v48";
+  const APP_VERSION = "v53";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -540,6 +566,35 @@
         "ARM9 item-use branch byte: RAM 0x020865EB / ROM 0x0008A5EB.",
       ],
     },
+    itemExpansion: {
+      title: "Item Expansion",
+      summary:
+        "Adds real new item IDs starting at 468 through a synthetic-overlay overflow item table and rankings-save overflow bag rows. Rows can optionally behave as extra TMs.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker ITEMEXPV1.",
+        "ARM9 hooks: Item_FileID at RAM 0x0207CE78, Item_Load at RAM 0x0207CF48, Bag_GetPocketForItem at RAM 0x0207D40C, and BagContext_CreateWithPockets at RAM 0x0207D824.",
+        "Overflow rows: generated item IDs start at 0x1D4 and point to cloned vanilla data/icon/palette members.",
+        "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_RANKINGS so expanded IDs do not consume vanilla bag pocket slots.",
+        "Bag UI: the TM/HM pocket view is rebuilt from vanilla TM/HMs plus overflow TM rows in synthetic-overlay RAM scratch storage.",
+        "Item text: msgdata/pl_msg.narc members 391-394 add names, article names, plural names, and descriptions for expanded IDs.",
+        "Overworld pickup compatibility: visible-item scripts are left unchanged. Use DSPRE Item Standardization or a script edit that sets variable 0x8008 to the expanded item ID before placing expanded pickups.",
+      ],
+    },
+    extraTMs: {
+      title: "Extra TMs",
+      summary:
+        "Adds up to 60 configurable-move extra TMs in the TM/HM pocket by creating new expanded item IDs backed by Item Expansion overflow storage.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker EXTRATMSV1.",
+        "ARM9 hooks: Item_IsTMHM at RAM 0x0205E060, Item_MoveForTMHM at RAM 0x0207D268, Item_TMHMNumber at RAM 0x0207D2B4, and CanPokemonFormLearnTM at RAM 0x02077FE4.",
+        "Overlay 84 bag UI hook: BagUI_PrintTMHMNumber at RAM 0x0223F8D0 displays configured entries as TM93-TM152 while preserving vanilla TM/HM display behavior.",
+        "Overlay 84 TM/HM list capacity is widened from 100 rendered entries to 160 rendered entries.",
+        "Item data: Item Expansion generates new item IDs that clone TM01 behavior and use type-matched TM icon/palette data where possible.",
+        "Move mapping: each TM93-TM152 row can teach a numeric move ID or a move name read from msgdata/pl_msg.narc member 647.",
+        "Compatibility: TM93-TM120 set the remaining vanilla personal TM mask bits for every personal entry; TM121-TM152 use an expanded compatibility table that currently defaults every personal entry to compatible.",
+        "Item text: Item Expansion writes msgdata/pl_msg.narc members 391-394 for TM93-TM152.",
+      ],
+    },
     playerAccuracy: {
       title: "Player accuracy bypass",
       summary:
@@ -687,6 +742,14 @@
     };
   }
 
+  function readMoveNames(inputBytes) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const file = findFileByPath(rom, MESSAGE_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const names = messageBankEntries(narcMemberBytes(narc, MOVE_NAMES_MESSAGE_MEMBER));
+    return names.map((name, id) => ({ id, name }));
+  }
+
   function shinyThresholdOption(options) {
     if (options && options.shinyOddsPercent !== undefined) {
       return shinyThresholdFromPercent(options.shinyOddsPercent);
@@ -754,6 +817,8 @@
     { id: "forgettableHMs", apply: simpleSitePatches.forgettableHMs },
     { id: "instantPokeradar", apply: simpleSitePatches.instantPokeradar },
     { id: "infiniteTMs", apply: simpleSitePatches.infiniteTMs },
+    { id: "itemExpansion", apply: itemExpansionPatches.itemExpansion },
+    { id: "extraTMs", apply: extraTmPatches.extraTMs },
     { id: "fairyType", apply: fairyPatches.fairyType },
     { id: "fairyPokemonTypes", apply: fairyPatches.fairyPokemonTypes },
     { id: "instantText", apply: textSpeedPatches.instantText },
@@ -778,11 +843,23 @@
     if (selected.has("fairyPokemonTypes")) {
       selected.add("fairyType");
     }
+    const hasExpandedTmRows = Array.isArray(options.expandedItems)
+      && options.expandedItems.some((row) => row && row.isTm);
+    if (hasExpandedTmRows) {
+      selected.add("extraTMs");
+    }
+    const extraTmsUsesExpandedItems = selected.has("extraTMs");
+    const effectiveOptions = { ...options, extraTmsAutoExpandedItems: extraTmsUsesExpandedItems };
+    if (selected.has("extraTMs")) {
+      selected.add("itemExpansion");
+    }
     if (
       selected.has("infiniteContinuousCandy") ||
       selected.has("itemRenewal") ||
       selected.has("natureStatColors") ||
-      selected.has("customOverworldSprites")
+      selected.has("customOverworldSprites") ||
+      selected.has("itemExpansion") ||
+      selected.has("extraTMs")
     ) {
       selected.add("arm9Expansion");
     }
@@ -796,8 +873,9 @@
     const orderedPatchIds = [
       ...(selected.has("arm9Expansion") ? ["arm9Expansion"] : []),
       ...(selected.has("fairyType") ? ["fairyType"] : []),
+      ...(selected.has("itemExpansion") ? ["itemExpansion"] : []),
       ...effectivePatchIds.filter(
-        (patchId) => patchId !== "arm9Expansion" && patchId !== "fairyType"
+        (patchId) => patchId !== "arm9Expansion" && patchId !== "fairyType" && patchId !== "itemExpansion"
       ),
     ];
     for (const patchId of orderedPatchIds) {
@@ -808,7 +886,7 @@
       if (!patch) {
         throw new PatchError(`Unknown patch: ${patchId}`);
       }
-      const patchResult = await patch(rom, Boolean(options.force), log, options);
+      const patchResult = await patch(rom, Boolean(effectiveOptions.force), log, effectiveOptions);
       if (patchResult instanceof Uint8Array) {
         rom = patchResult;
       }
@@ -892,6 +970,10 @@
               ? "instantpokeradar"
             : id === "infiniteTMs"
               ? "infinitetms"
+            : id === "itemExpansion"
+              ? "itemexpansion"
+            : id === "extraTMs"
+              ? "extratms"
             : id.replace(/_/g, "")
       )
       .join(".");
@@ -930,6 +1012,7 @@
       ivRangeText,
       natureAllowedOption,
       outputName,
+      readMoveNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,
@@ -961,6 +1044,7 @@
       ivRangeText,
       natureAllowedOption,
       outputName,
+      readMoveNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,

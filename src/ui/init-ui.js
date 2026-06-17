@@ -35,6 +35,7 @@
     ivRangeText,
     natureAllowedOption,
     outputName,
+    readMoveNames,
     shinyOddsLabel,
     shinyOddsPercentOption,
     shinyThresholdFromPercent,
@@ -78,6 +79,15 @@ function initUi() {
   const customOverworldSpriteRows = document.getElementById("customOverworldSpriteRows");
   const customOverworldSpriteStatus = document.getElementById("customOverworldSpriteStatus");
   const customOverworldSpriteRefresh = document.getElementById("customOverworldSpriteRefresh");
+  const itemExpansionRows = document.getElementById("itemExpansionRows");
+  const itemExpansionStatus = document.getElementById("itemExpansionStatus");
+  const itemExpansionAddRow = document.getElementById("itemExpansionAddRow");
+  const extraTmsInput = document.getElementById("extraTmsPatch");
+  const extraTmConfig = document.getElementById("extraTmConfig");
+  const extraTmRows = document.getElementById("extraTmRows");
+  const extraTmStatus = document.getElementById("extraTmStatus");
+  const extraTmMoveOptions = document.getElementById("extraTmMoveOptions");
+  const EXTRA_TM_COUNT = 60;
 
   let loadedFile = null;
   let loadedBytes = null;
@@ -201,6 +211,239 @@ function initUi() {
       .filter((row) => row.appearanceId || row.mmodelMember);
   }
 
+  function createItemExpansionField(labelText, field, value = "", multiline = false) {
+    const label = document.createElement("label");
+    label.className = "item-expansion-field";
+
+    const span = document.createElement("span");
+    span.textContent = labelText;
+
+    const input = multiline ? document.createElement("textarea") : document.createElement("input");
+    if (!multiline) {
+      input.type = "text";
+    }
+    input.value = value;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.dataset.itemExpansionField = field;
+
+    label.append(span, input);
+    return label;
+  }
+
+  function createItemExpansionRow(values = {}) {
+    const row = document.createElement("div");
+    row.className = "item-expansion-row";
+
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "item-expansion-row-label";
+
+    const remove = document.createElement("button");
+    remove.className = "secondary-button item-expansion-remove";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      row.remove();
+      renumberItemExpansionRows();
+      renderExtraTmRows();
+      clearDownload();
+    });
+
+    const tmToggle = document.createElement("label");
+    tmToggle.className = "item-expansion-tm-toggle";
+    const tmInput = document.createElement("input");
+    tmInput.type = "checkbox";
+    tmInput.checked = Boolean(values.isTm);
+    tmInput.dataset.itemExpansionField = "isTm";
+    const tmText = document.createElement("span");
+    tmText.textContent = "TM";
+    tmToggle.append(tmInput, tmText);
+
+    const moveField = createItemExpansionField("Move", "move", values.move || "");
+    const moveInput = moveField.querySelector("input");
+    if (moveInput) {
+      moveInput.setAttribute("list", "extraTmMoveOptions");
+      moveInput.placeholder = "Karate Chop or 0x2";
+    }
+
+    row.append(
+      rowLabel,
+      tmToggle,
+      createItemExpansionField("Clone from", "cloneFrom", values.cloneFrom || ""),
+      createItemExpansionField("Icon from", "iconFrom", values.iconFrom || ""),
+      createItemExpansionField("Name", "name", values.name || ""),
+      moveField,
+      createItemExpansionField("Description", "description", values.description || "", true),
+      remove
+    );
+    return row;
+  }
+
+  function renumberItemExpansionRows() {
+    if (!itemExpansionRows || !itemExpansionStatus || !itemExpansionAddRow) {
+      return;
+    }
+    const rows = Array.from(itemExpansionRows.querySelectorAll(".item-expansion-row"));
+    let tmIndex = 0;
+    rows.forEach((row, index) => {
+      const rowLabel = row.querySelector(".item-expansion-row-label");
+      if (rowLabel) {
+        const tmInput = row.querySelector(`[data-item-expansion-field="isTm"]`);
+        if (tmInput && tmInput.checked) {
+          rowLabel.textContent = `ID ${hex(0x1d4 + index)} / TM${93 + tmIndex}`;
+          tmIndex += 1;
+        } else {
+          rowLabel.textContent = `ID ${hex(0x1d4 + index)}`;
+        }
+      }
+      const remove = row.querySelector(".item-expansion-remove");
+      if (remove) {
+        remove.setAttribute("aria-label", `Remove expanded item ${hex(0x1d4 + index)} row`);
+      }
+    });
+
+    itemExpansionAddRow.disabled = rows.length >= 128;
+    const configured = expandedItemEntries().length;
+    itemExpansionStatus.classList.remove("ready", "missing");
+    if (rows.length >= 128) {
+      itemExpansionStatus.classList.add("ready");
+      itemExpansionStatus.textContent = "128 expanded item rows configured.";
+    } else if (configured) {
+      itemExpansionStatus.textContent = `${configured} expanded item row${
+        configured === 1 ? "" : "s"
+      } configured, ${tmIndex} marked as TM${tmIndex === 1 ? "" : "s"}.`;
+    } else {
+      itemExpansionStatus.classList.add("missing");
+      itemExpansionStatus.textContent = "Add at least one item row.";
+    }
+  }
+
+  function addItemExpansionRow(values = {}) {
+    if (!itemExpansionRows) {
+      return;
+    }
+    if (itemExpansionRows.querySelectorAll(".item-expansion-row").length >= 128) {
+      return;
+    }
+    itemExpansionRows.append(createItemExpansionRow(values));
+    renumberItemExpansionRows();
+  }
+
+  function expandedItemEntries() {
+    if (!itemExpansionRows) {
+      return [];
+    }
+    return Array.from(itemExpansionRows.querySelectorAll(".item-expansion-row"))
+      .map((row) => {
+        const field = (name) => {
+          const input = row.querySelector(`[data-item-expansion-field="${name}"]`);
+          return input ? input.value.trim() : "";
+        };
+        return {
+          cloneFrom: field("cloneFrom"),
+          iconFrom: field("iconFrom"),
+          name: field("name"),
+          isTm: Boolean(row.querySelector(`[data-item-expansion-field="isTm"]`)?.checked),
+          move: field("move"),
+          description: field("description"),
+        };
+      })
+      .filter((row) => row.cloneFrom || row.iconFrom || row.name || row.description || row.isTm);
+  }
+
+  function renderExtraTmMoveOptions(bytes) {
+    if (!extraTmMoveOptions) {
+      return;
+    }
+    extraTmMoveOptions.textContent = "";
+    if (!bytes || typeof readMoveNames !== "function") {
+      return;
+    }
+    try {
+      for (const move of readMoveNames(bytes)) {
+        if (!move || move.id < 1 || !move.name) {
+          continue;
+        }
+        const option = document.createElement("option");
+        option.value = move.name;
+        option.label = `#${move.id}`;
+        extraTmMoveOptions.append(option);
+      }
+    } catch (error) {
+      extraTmMoveOptions.textContent = "";
+    }
+  }
+
+  function createExtraTmRow(values = {}, index = 0) {
+    const row = document.createElement("div");
+    row.className = "extra-tm-row";
+
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "extra-tm-row-label";
+
+    const field = document.createElement("label");
+    field.className = "extra-tm-field";
+
+    const span = document.createElement("span");
+    span.textContent = "Move";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = values.move || "Karate Chop";
+    input.setAttribute("list", "extraTmMoveOptions");
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.dataset.extraTmField = "move";
+    input.placeholder = "Karate Chop or 0x2";
+
+    field.append(span, input);
+    row.append(rowLabel, field);
+    return row;
+  }
+
+  function renderExtraTmRows() {
+    if (!extraTmRows || !extraTmStatus) {
+      return;
+    }
+    const previous = extraTmEntries();
+    extraTmRows.textContent = "";
+    extraTmStatus.classList.remove("ready", "missing");
+
+    for (let index = 0; index < EXTRA_TM_COUNT; index += 1) {
+      extraTmRows.append(createExtraTmRow(previous[index] || {}, index));
+    }
+
+    const manualCount = expandedItemEntries().length;
+    const rows = Array.from(extraTmRows.querySelectorAll(".extra-tm-row"));
+    rows.forEach((row, index) => {
+      const rowLabel = row.querySelector(".extra-tm-row-label");
+      if (rowLabel) {
+        rowLabel.textContent = `TM${93 + index} / ID ${hex(0x1d4 + manualCount + index)}`;
+      }
+    });
+
+    extraTmStatus.classList.add("ready");
+    extraTmStatus.textContent = `${EXTRA_TM_COUNT} Extra TMs configured.`;
+  }
+
+  function updateExtraTmConfigVisibility() {
+    if (!extraTmConfig || !extraTmsInput) {
+      return;
+    }
+    extraTmConfig.hidden = !extraTmsInput.checked;
+  }
+
+  function extraTmEntries() {
+    if (!extraTmRows) {
+      return [];
+    }
+    return Array.from(extraTmRows.querySelectorAll(".extra-tm-row"))
+      .map((row) => {
+        const input = row.querySelector("[data-extra-tm-field='move']");
+        return { move: input ? input.value.trim() : "" };
+      });
+  }
+
   function clearDownload() {
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
@@ -244,6 +487,8 @@ function initUi() {
       natureAllowed: selectedNatureIds(),
       universalInfatuationAi: universalInfatuationAiInput.checked,
       customOverworldSprites: customOverworldSpriteEntries(),
+      expandedItems: expandedItemEntries(),
+      extraTms: extraTmEntries(),
       debugFairyBattleTest: Boolean(config.debugFairyBattleTest),
     };
   }
@@ -279,6 +524,13 @@ function initUi() {
         ? options.customOverworldSprites.length
         : 0;
       return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
+    }
+    if (id === "itemExpansion") {
+      const count = Array.isArray(options && options.expandedItems) ? options.expandedItems.length : 0;
+      return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
+    }
+    if (id === "extraTMs") {
+      return `${PATCHES[id]} (${EXTRA_TM_COUNT} rows)`;
     }
     return PATCHES[id];
   }
@@ -430,6 +682,10 @@ function initUi() {
   }
 
   renderNatureButtons();
+  addItemExpansionRow();
+  renumberItemExpansionRows();
+  renderExtraTmRows();
+  updateExtraTmConfigVisibility();
   addPatchInfoButtons();
   updateTextSpeedValue();
   updateShinyOddsValue();
@@ -494,11 +750,35 @@ function initUi() {
       closePatchInfo();
     }
   });
-  patchGrid.addEventListener("change", clearDownload);
+  patchGrid.addEventListener("change", (event) => {
+    if (event.target === extraTmsInput) {
+      updateExtraTmConfigVisibility();
+    }
+    clearDownload();
+  });
   forceInput.addEventListener("change", clearDownload);
   outputNameInput.addEventListener("input", clearDownload);
   if (customOverworldSpriteRows) {
     customOverworldSpriteRows.addEventListener("input", clearDownload);
+  }
+  if (itemExpansionRows) {
+    itemExpansionRows.addEventListener("input", () => {
+      renumberItemExpansionRows();
+      renderExtraTmRows();
+      clearDownload();
+    });
+  }
+  if (itemExpansionAddRow) {
+    itemExpansionAddRow.addEventListener("click", () => {
+      addItemExpansionRow();
+      renderExtraTmRows();
+      clearDownload();
+    });
+  }
+  if (extraTmRows) {
+    extraTmRows.addEventListener("input", () => {
+      clearDownload();
+    });
   }
   if (customOverworldSpriteRefresh) {
     customOverworldSpriteRefresh.addEventListener("click", () => {
@@ -518,6 +798,7 @@ function initUi() {
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
+      renderExtraTmMoveOptions();
       fileSubtitle.textContent = "The patched ROM is generated locally in your browser.";
       setLog("Waiting for a ROM.");
       return;
@@ -531,6 +812,7 @@ function initUi() {
       romStatus.classList.add("ready");
       updateArm9ExpansionStatus(loadedBytes);
       renderCustomOverworldSpriteRows(loadedBytes);
+      renderExtraTmMoveOptions(loadedBytes);
       fileSubtitle.textContent = `${loadedFile.name} - ${(loadedFile.size / 1024 / 1024).toFixed(
         1
       )} MB`;
@@ -545,6 +827,7 @@ function initUi() {
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
+      renderExtraTmMoveOptions();
       setLog(`Error: ${error.message}`);
     }
   });

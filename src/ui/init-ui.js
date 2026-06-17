@@ -27,6 +27,7 @@
     critBaseDivisorOption,
     critOddsLabel,
     customOutputName,
+    detectExtraTmState,
     detectCustomMmodelMembers,
     frameRateModeOption,
     hasPatch,
@@ -36,6 +37,7 @@
     natureAllowedOption,
     outputName,
     readMoveNames,
+    readSpeciesNames,
     shinyOddsLabel,
     shinyOddsPercentOption,
     shinyThresholdFromPercent,
@@ -87,11 +89,23 @@ function initUi() {
   const extraTmRows = document.getElementById("extraTmRows");
   const extraTmStatus = document.getElementById("extraTmStatus");
   const extraTmMoveOptions = document.getElementById("extraTmMoveOptions");
+  const extraTmSpeciesOptions = document.getElementById("extraTmSpeciesOptions");
+  const extraTmCompatModal = document.getElementById("extraTmCompatModal");
+  const extraTmCompatTitle = document.getElementById("extraTmCompatTitle");
+  const extraTmCompatClose = document.getElementById("extraTmCompatClose");
+  const extraTmCompatInput = document.getElementById("extraTmCompatInput");
+  const extraTmCompatAdd = document.getElementById("extraTmCompatAdd");
+  const extraTmCompatClear = document.getElementById("extraTmCompatClear");
+  const extraTmCompatList = document.getElementById("extraTmCompatList");
+  const extraTmCompatStatus = document.getElementById("extraTmCompatStatus");
   const EXTRA_TM_COUNT = 60;
 
   let loadedFile = null;
   let loadedBytes = null;
   let downloadUrl = null;
+  let speciesNames = [];
+  let personalEntryCount = 0;
+  let activeCompatRow = null;
 
   function setLog(lines) {
     logOutput.textContent = Array.isArray(lines) ? lines.join("\n") : lines;
@@ -374,12 +388,213 @@ function initUi() {
     }
   }
 
+  function normalizeLookupName(name) {
+    return String(name || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function speciesLabel(id) {
+    const entry = speciesNames[id];
+    return entry && entry.name ? `${entry.name} (#${id})` : `#${id}`;
+  }
+
+  function renderExtraTmSpeciesOptions(bytes) {
+    speciesNames = [];
+    personalEntryCount = 0;
+    if (extraTmSpeciesOptions) {
+      extraTmSpeciesOptions.textContent = "";
+    }
+    if (!bytes || typeof readSpeciesNames !== "function") {
+      return;
+    }
+    try {
+      speciesNames = readSpeciesNames(bytes);
+      personalEntryCount = speciesNames.length;
+      if (!extraTmSpeciesOptions) {
+        return;
+      }
+      for (const species of speciesNames) {
+        if (!species || species.id < 1 || !species.name) {
+          continue;
+        }
+        const option = document.createElement("option");
+        option.value = species.name;
+        option.label = `#${species.id}`;
+        extraTmSpeciesOptions.append(option);
+      }
+    } catch (error) {
+      speciesNames = [];
+      personalEntryCount = 0;
+      if (extraTmSpeciesOptions) {
+        extraTmSpeciesOptions.textContent = "";
+      }
+    }
+  }
+
+  function parseSpeciesToken(token) {
+    const text = String(token || "").trim();
+    if (!text) {
+      return null;
+    }
+    const numeric = /^0x[0-9a-f]+$/i.test(text)
+      ? Number.parseInt(text.slice(2), 16)
+      : /^[0-9]+$/.test(text)
+        ? Number.parseInt(text, 10)
+        : null;
+    let id = numeric;
+    if (id === null) {
+      const wanted = normalizeLookupName(text);
+      const found = speciesNames.find((species) => normalizeLookupName(species.name) === wanted);
+      id = found ? found.id : null;
+    }
+    const maxEntry = personalEntryCount || speciesNames.length;
+    if (!Number.isInteger(id) || id < 1 || (maxEntry && id >= maxEntry)) {
+      throw new Error(`Could not find "${text}" as a valid Pokemon name or personal entry ID.`);
+    }
+    return id;
+  }
+
+  function parseSpeciesTokens(text) {
+    return String(text || "")
+      .split(/[,\n;]/)
+      .map((token) => token.trim())
+      .filter(Boolean)
+      .map(parseSpeciesToken);
+  }
+
+  function rowCompatibility(row) {
+    try {
+      const parsed = JSON.parse(row.dataset.compatiblePokemon || "[]");
+      return Array.isArray(parsed)
+        ? parsed.filter((id) => Number.isInteger(id) && id > 0)
+        : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function compatibilitySummary(ids) {
+    if (!ids.length) {
+      return "No Pokemon";
+    }
+    if (ids.length === 1) {
+      return speciesLabel(ids[0]);
+    }
+    return `${ids.length} Pokemon`;
+  }
+
+  function updateCompatibilitySummary(row) {
+    const summary = row.querySelector(".extra-tm-compat-summary");
+    if (summary) {
+      summary.textContent = `Compatible: ${compatibilitySummary(rowCompatibility(row))}`;
+    }
+  }
+
+  function setRowCompatibility(row, ids) {
+    const unique = Array.from(new Set(ids))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((a, b) => a - b);
+    row.dataset.compatiblePokemon = JSON.stringify(unique);
+    updateCompatibilitySummary(row);
+  }
+
+  function renderCompatibilityList() {
+    if (!extraTmCompatList || !activeCompatRow) {
+      return;
+    }
+    extraTmCompatList.textContent = "";
+    const ids = rowCompatibility(activeCompatRow);
+    for (const id of ids) {
+      const chip = document.createElement("span");
+      chip.className = "compat-chip";
+      chip.textContent = speciesLabel(id);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `Remove ${speciesLabel(id)}`);
+      remove.addEventListener("click", () => {
+        setRowCompatibility(
+          activeCompatRow,
+          rowCompatibility(activeCompatRow).filter((entry) => entry !== id)
+        );
+        renderCompatibilityList();
+        clearDownload();
+      });
+      chip.append(remove);
+      extraTmCompatList.append(chip);
+    }
+    if (extraTmCompatStatus) {
+      extraTmCompatStatus.textContent = ids.length
+        ? `${ids.length} compatible Pokemon selected.`
+        : "No compatible Pokemon selected.";
+    }
+  }
+
+  function openExtraTmCompatibility(row) {
+    activeCompatRow = row;
+    if (extraTmCompatTitle) {
+      const label = row.querySelector(".extra-tm-row-label");
+      extraTmCompatTitle.textContent = label ? `${label.textContent} compatibility` : "TM compatibility";
+    }
+    if (extraTmCompatInput) {
+      extraTmCompatInput.value = "";
+    }
+    renderCompatibilityList();
+    if (typeof extraTmCompatModal.showModal === "function") {
+      extraTmCompatModal.showModal();
+    } else {
+      extraTmCompatModal.setAttribute("open", "");
+    }
+    if (extraTmCompatInput) {
+      extraTmCompatInput.focus();
+    }
+  }
+
+  function closeExtraTmCompatibility() {
+    activeCompatRow = null;
+    if (typeof extraTmCompatModal.close === "function") {
+      extraTmCompatModal.close();
+    } else {
+      extraTmCompatModal.removeAttribute("open");
+    }
+  }
+
+  function addCompatibilityInput() {
+    if (!activeCompatRow || !extraTmCompatInput || !extraTmCompatStatus) {
+      return;
+    }
+    try {
+      const ids = parseSpeciesTokens(extraTmCompatInput.value);
+      setRowCompatibility(activeCompatRow, [...rowCompatibility(activeCompatRow), ...ids]);
+      extraTmCompatInput.value = "";
+      extraTmCompatStatus.textContent = ids.length ? `Added ${ids.length} Pokemon.` : "Enter a Pokemon name or ID.";
+      renderCompatibilityList();
+      clearDownload();
+    } catch (error) {
+      extraTmCompatStatus.textContent = error.message;
+    }
+  }
+
   function createExtraTmRow(values = {}, index = 0) {
     const row = document.createElement("div");
     row.className = "extra-tm-row";
+    setRowCompatibility(row, Array.isArray(values.compatiblePokemon) ? values.compatiblePokemon : []);
 
+    const heading = document.createElement("div");
+    heading.className = "extra-tm-row-heading";
     const rowLabel = document.createElement("div");
     rowLabel.className = "extra-tm-row-label";
+    const compatButton = document.createElement("button");
+    compatButton.className = "secondary-button extra-tm-compat-button";
+    compatButton.type = "button";
+    compatButton.textContent = "Compatibility";
+    compatButton.addEventListener("click", () => {
+      openExtraTmCompatibility(row);
+    });
+    heading.append(rowLabel, compatButton);
 
     const field = document.createElement("label");
     field.className = "extra-tm-field";
@@ -389,7 +604,7 @@ function initUi() {
 
     const input = document.createElement("input");
     input.type = "text";
-    input.value = values.move || "Karate Chop";
+    input.value = values.move || values.moveName || "Karate Chop";
     input.setAttribute("list", "extraTmMoveOptions");
     input.autocomplete = "off";
     input.spellcheck = false;
@@ -397,15 +612,18 @@ function initUi() {
     input.placeholder = "Karate Chop or 0x2";
 
     field.append(span, input);
-    row.append(rowLabel, field);
+    const summary = document.createElement("div");
+    summary.className = "extra-tm-compat-summary";
+    row.append(heading, field, summary);
+    updateCompatibilitySummary(row);
     return row;
   }
 
-  function renderExtraTmRows() {
+  function renderExtraTmRows(seedRows = null) {
     if (!extraTmRows || !extraTmStatus) {
       return;
     }
-    const previous = extraTmEntries();
+    const previous = Array.isArray(seedRows) ? seedRows : extraTmEntries();
     extraTmRows.textContent = "";
     extraTmStatus.classList.remove("ready", "missing");
 
@@ -433,6 +651,33 @@ function initUi() {
     extraTmConfig.hidden = !extraTmsInput.checked;
   }
 
+  function loadExtraTmState(bytes) {
+    if (!bytes || typeof detectExtraTmState !== "function") {
+      return;
+    }
+    try {
+      const state = detectExtraTmState(bytes);
+      personalEntryCount = state.personalCount || personalEntryCount;
+      if (state.installed) {
+        renderExtraTmRows(state.rows);
+        extraTmStatus.classList.add("ready");
+        extraTmStatus.textContent = `Loaded ${state.rowCount || EXTRA_TM_COUNT} Extra TM row${
+          (state.rowCount || EXTRA_TM_COUNT) === 1 ? "" : "s"
+        } from the ROM.`;
+      } else {
+        renderExtraTmRows(
+          Array.from({ length: EXTRA_TM_COUNT }, () => ({
+            move: "Karate Chop",
+            compatiblePokemon: [],
+          }))
+        );
+      }
+    } catch (error) {
+      extraTmStatus.classList.add("missing");
+      extraTmStatus.textContent = "Could not read existing Extra TMs compatibility data.";
+    }
+  }
+
   function extraTmEntries() {
     if (!extraTmRows) {
       return [];
@@ -440,7 +685,10 @@ function initUi() {
     return Array.from(extraTmRows.querySelectorAll(".extra-tm-row"))
       .map((row) => {
         const input = row.querySelector("[data-extra-tm-field='move']");
-        return { move: input ? input.value.trim() : "" };
+        return {
+          move: input ? input.value.trim() : "",
+          compatiblePokemon: rowCompatibility(row),
+        };
       });
   }
 
@@ -750,6 +998,27 @@ function initUi() {
       closePatchInfo();
     }
   });
+  extraTmCompatClose.addEventListener("click", closeExtraTmCompatibility);
+  extraTmCompatModal.addEventListener("click", (event) => {
+    if (event.target === extraTmCompatModal) {
+      closeExtraTmCompatibility();
+    }
+  });
+  extraTmCompatAdd.addEventListener("click", addCompatibilityInput);
+  extraTmCompatClear.addEventListener("click", () => {
+    if (!activeCompatRow) {
+      return;
+    }
+    setRowCompatibility(activeCompatRow, []);
+    renderCompatibilityList();
+    clearDownload();
+  });
+  extraTmCompatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCompatibilityInput();
+    }
+  });
   patchGrid.addEventListener("change", (event) => {
     if (event.target === extraTmsInput) {
       updateExtraTmConfigVisibility();
@@ -799,6 +1068,7 @@ function initUi() {
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
       renderExtraTmMoveOptions();
+      renderExtraTmSpeciesOptions();
       fileSubtitle.textContent = "The patched ROM is generated locally in your browser.";
       setLog("Waiting for a ROM.");
       return;
@@ -813,6 +1083,8 @@ function initUi() {
       updateArm9ExpansionStatus(loadedBytes);
       renderCustomOverworldSpriteRows(loadedBytes);
       renderExtraTmMoveOptions(loadedBytes);
+      renderExtraTmSpeciesOptions(loadedBytes);
+      loadExtraTmState(loadedBytes);
       fileSubtitle.textContent = `${loadedFile.name} - ${(loadedFile.size / 1024 / 1024).toFixed(
         1
       )} MB`;
@@ -828,6 +1100,7 @@ function initUi() {
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
       renderExtraTmMoveOptions();
+      renderExtraTmSpeciesOptions();
       setLog(`Error: ${error.message}`);
     }
   });

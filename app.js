@@ -211,14 +211,26 @@
     hex,
     dsPreArm9ExpansionStatus,
     findFileByPath,
+    findNeedle,
     messageBankEntries,
     narcMemberBytes,
     parseNarc,
+    readSyntheticOverlayMember,
+    readU16,
+    readU32,
   } = core;
   const BASE_MMODEL_MEMBER_COUNT = 470;
   const MMODEL_NARC_PATH = "data/mmodel/mmodel.narc";
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
+  const PERSONAL_NARC_PATH = "poketool/personal/pl_personal.narc";
+  const EXTRA_TMS_MARKER = "EXTRATMSV1\0\0\0\0\0\0";
+  const EXTRA_TM_COUNT = 60;
+  const EXTRA_TM_VANILLA_COMPAT_ROWS = 28;
+  const EXTRA_TM_TABLE_OFFSET = 0x500;
+  const EXTRA_TM_TABLE_MAX_ROWS = 60;
+  const EXTRA_TM_PERSONAL_MASK_OFFSET = 0x28;
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
+  const SPECIES_NAMES_MESSAGE_MEMBER = 412;
 
   const PATCHES = {
     arm9Expansion: "DSPRE ARM9 expansion",
@@ -259,7 +271,7 @@
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
   };
-  const APP_VERSION = "v53";
+  const APP_VERSION = "v54";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -577,7 +589,7 @@
         "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_RANKINGS so expanded IDs do not consume vanilla bag pocket slots.",
         "Bag UI: the TM/HM pocket view is rebuilt from vanilla TM/HMs plus overflow TM rows in synthetic-overlay RAM scratch storage.",
         "Item text: msgdata/pl_msg.narc members 391-394 add names, article names, plural names, and descriptions for expanded IDs.",
-        "Overworld pickup compatibility: visible-item scripts are left unchanged. Use DSPRE Item Standardization or a script edit that sets variable 0x8008 to the expanded item ID before placing expanded pickups.",
+        "Overworld pickup compatibility: if DSPRE Item Standardization is already present, the standardized visible-item script file is extended for expanded IDs.",
       ],
     },
     extraTMs: {
@@ -591,7 +603,7 @@
         "Overlay 84 TM/HM list capacity is widened from 100 rendered entries to 160 rendered entries.",
         "Item data: Item Expansion generates new item IDs that clone TM01 behavior and use type-matched TM icon/palette data where possible.",
         "Move mapping: each TM93-TM152 row can teach a numeric move ID or a move name read from msgdata/pl_msg.narc member 647.",
-        "Compatibility: TM93-TM120 set the remaining vanilla personal TM mask bits for every personal entry; TM121-TM152 use an expanded compatibility table that currently defaults every personal entry to compatible.",
+        "Compatibility: TM93-TM120 use the remaining vanilla personal TM mask bits; TM121-TM152 use an expanded compatibility table in the synthetic overlay. Rows default to no compatible Pokemon unless loaded from an already-patched ROM or configured in the UI.",
         "Item text: Item Expansion writes msgdata/pl_msg.narc members 391-394 for TM93-TM152.",
       ],
     },
@@ -748,6 +760,100 @@
     const narc = rom.slice(file.start, file.end);
     const names = messageBankEntries(narcMemberBytes(narc, MOVE_NAMES_MESSAGE_MEMBER));
     return names.map((name, id) => ({ id, name }));
+  }
+
+  function readSpeciesNames(inputBytes) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const file = findFileByPath(rom, MESSAGE_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const names = messageBankEntries(narcMemberBytes(narc, SPECIES_NAMES_MESSAGE_MEMBER));
+    return names.map((name, id) => ({ id, name }));
+  }
+
+  function readPersonalMembers(rom) {
+    const file = findFileByPath(rom, PERSONAL_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const parsed = parseNarc(narc);
+    return parsed.entries.map((entry) =>
+      narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end)
+    );
+  }
+
+  function detectExtraTmState(inputBytes) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const personalMembers = readPersonalMembers(rom);
+    const moveNames = readMoveNames(rom);
+    const rows = Array.from({ length: EXTRA_TM_COUNT }, (_, index) => ({
+      rowIndex: index,
+      tmNumber: 93 + index,
+      itemId: null,
+      moveId: null,
+      moveName: "",
+      compatiblePokemon: [],
+    }));
+
+    let synth;
+    try {
+      synth = readSyntheticOverlayMember(rom).member;
+    } catch (error) {
+      return { installed: false, personalCount: personalMembers.length, rows };
+    }
+
+    const marker = core.asciiBytes(EXTRA_TMS_MARKER);
+    const markers = findNeedle(synth, marker, 0, synth.length);
+    if (!markers.length) {
+      return { installed: false, personalCount: personalMembers.length, rows };
+    }
+
+    const markerOffset = markers[markers.length - 1];
+    const tableOffset = markerOffset + marker.length + EXTRA_TM_TABLE_OFFSET;
+    if (tableOffset + 8 + EXTRA_TM_TABLE_MAX_ROWS * 4 > synth.length) {
+      throw new PatchError("Extra TMs marker was found, but its helper table points outside the synthetic overlay.");
+    }
+
+    const rowCount = Math.min(readU32(synth, tableOffset), EXTRA_TM_COUNT);
+    const itemOffset = tableOffset + 8;
+    const moveOffset = itemOffset + EXTRA_TM_TABLE_MAX_ROWS * 2;
+    const compatOffset = moveOffset + EXTRA_TM_TABLE_MAX_ROWS * 2;
+
+    for (let index = 0; index < rowCount; index += 1) {
+      const itemId = readU16(synth, itemOffset + index * 2);
+      const moveId = readU16(synth, moveOffset + index * 2);
+      rows[index].itemId = itemId;
+      rows[index].moveId = moveId;
+      rows[index].moveName =
+        moveNames[moveId] && moveNames[moveId].name ? moveNames[moveId].name : moveId ? hex(moveId) : "";
+    }
+
+    for (let memberId = 0; memberId < personalMembers.length; memberId += 1) {
+      const member = personalMembers[memberId];
+      if (member.length >= EXTRA_TM_PERSONAL_MASK_OFFSET + 4) {
+        const mask = readU32(member, EXTRA_TM_PERSONAL_MASK_OFFSET);
+        for (let index = 0; index < Math.min(rowCount, EXTRA_TM_VANILLA_COMPAT_ROWS); index += 1) {
+          if (mask & ((1 << (index + 4)) >>> 0)) {
+            rows[index].compatiblePokemon.push(memberId);
+          }
+        }
+      }
+
+      const maskOffset = compatOffset + memberId * 4;
+      if (maskOffset + 4 <= synth.length) {
+        const expandedMask = readU32(synth, maskOffset);
+        for (let index = EXTRA_TM_VANILLA_COMPAT_ROWS; index < rowCount; index += 1) {
+          if (expandedMask & ((1 << (index - EXTRA_TM_VANILLA_COMPAT_ROWS)) >>> 0)) {
+            rows[index].compatiblePokemon.push(memberId);
+          }
+        }
+      }
+    }
+
+    return {
+      installed: true,
+      markerOffset,
+      rowCount,
+      personalCount: personalMembers.length,
+      rows,
+    };
   }
 
   function shinyThresholdOption(options) {
@@ -1004,6 +1110,7 @@
       critBaseDivisorOption,
       critOddsLabel,
       customOutputName,
+      detectExtraTmState,
       detectCustomMmodelMembers,
       frameRateModeOption,
       hasPatch,
@@ -1013,6 +1120,7 @@
       natureAllowedOption,
       outputName,
       readMoveNames,
+      readSpeciesNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,
@@ -1036,6 +1144,7 @@
       critBaseDivisorOption,
       critOddsLabel,
       customOutputName,
+      detectExtraTmState,
       detectCustomMmodelMembers,
       frameRateModeOption,
       hasPatch,
@@ -1045,6 +1154,7 @@
       natureAllowedOption,
       outputName,
       readMoveNames,
+      readSpeciesNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,

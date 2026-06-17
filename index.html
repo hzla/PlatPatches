@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=53" />
+    <link rel="stylesheet" href="./styles.css?v=54" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v53</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v54</div>
       </section>
 
       <section class="panel upload-panel">
@@ -433,6 +433,7 @@
                       <small class="patch-status" id="extraTmStatus">60 Extra TMs configured.</small>
                     </div>
                     <datalist id="extraTmMoveOptions"></datalist>
+                    <datalist id="extraTmSpeciesOptions"></datalist>
                     <div class="extra-tm-rows" id="extraTmRows"></div>
                   </div>
                 </div>
@@ -480,32 +481,52 @@
         <h3>Technical details</h3>
         <ul id="patchInfoRegions"></ul>
       </dialog>
+
+      <dialog class="info-modal compat-modal" id="extraTmCompatModal">
+        <div class="modal-heading">
+          <h2 id="extraTmCompatTitle">TM compatibility</h2>
+          <button class="modal-close" id="extraTmCompatClose" type="button" aria-label="Close compatibility editor">×</button>
+        </div>
+        <div class="compat-modal-body">
+          <label class="compat-field">
+            <span>Add Pokemon by name or ID</span>
+            <input id="extraTmCompatInput" type="text" list="extraTmSpeciesOptions" placeholder="Breloom or 0x11E" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="compat-actions">
+            <button id="extraTmCompatAdd" type="button">Add</button>
+            <button id="extraTmCompatClear" class="secondary-button" type="button">Clear</button>
+          </div>
+          <p class="compat-help" id="extraTmCompatHelp">Leaving this list empty means no Pokemon can learn this TM.</p>
+          <div class="compat-list" id="extraTmCompatList"></div>
+          <p class="compat-status" id="extraTmCompatStatus"></p>
+        </div>
+      </dialog>
     </main>
 
-    <script src="./src/core.js?v=53"></script>
-    <script src="./src/patches/registry.js?v=53"></script>
-    <script src="./src/patches/infrastructure.js?v=53"></script>
-    <script src="./src/patches/simple-sites.js?v=53"></script>
-    <script src="./src/patches/fairy-type.js?v=53"></script>
-    <script src="./vendor/armips/armips.js?v=53"></script>
-    <script src="./src/asm/armips-assembler.js?v=53"></script>
-    <script src="./src/asm/templates.js?v=53"></script>
-    <script src="./src/patches/infinite-candy.js?v=53"></script>
-    <script src="./src/patches/item-renewal.js?v=53"></script>
-    <script src="./src/patches/text-speed.js?v=53"></script>
-    <script src="./src/patches/modern-status.js?v=53"></script>
-    <script src="./src/patches/battle-critical.js?v=53"></script>
-    <script src="./src/patches/rng-generation.js?v=53"></script>
-    <script src="./src/patches/wild-natures.js?v=53"></script>
-    <script src="./src/patches/battle-weather.js?v=53"></script>
-    <script src="./src/patches/frame-rate.js?v=53"></script>
-    <script src="./src/patches/field-movement.js?v=53"></script>
-    <script src="./src/patches/field-misc.js?v=53"></script>
-    <script src="./src/patches/summary-screen.js?v=53"></script>
-    <script src="./src/patches/overworld-sprites.js?v=53"></script>
-    <script src="./src/patches/item-expansion.js?v=53"></script>
-    <script src="./src/patches/extra-tms.js?v=53"></script>
-    <script src="./app.js?v=53"></script>
-    <script src="./src/ui/init-ui.js?v=53"></script>
+    <script src="./src/core.js?v=54"></script>
+    <script src="./src/patches/registry.js?v=54"></script>
+    <script src="./src/patches/infrastructure.js?v=54"></script>
+    <script src="./src/patches/simple-sites.js?v=54"></script>
+    <script src="./src/patches/fairy-type.js?v=54"></script>
+    <script src="./vendor/armips/armips.js?v=54"></script>
+    <script src="./src/asm/armips-assembler.js?v=54"></script>
+    <script src="./src/asm/templates.js?v=54"></script>
+    <script src="./src/patches/infinite-candy.js?v=54"></script>
+    <script src="./src/patches/item-renewal.js?v=54"></script>
+    <script src="./src/patches/text-speed.js?v=54"></script>
+    <script src="./src/patches/modern-status.js?v=54"></script>
+    <script src="./src/patches/battle-critical.js?v=54"></script>
+    <script src="./src/patches/rng-generation.js?v=54"></script>
+    <script src="./src/patches/wild-natures.js?v=54"></script>
+    <script src="./src/patches/battle-weather.js?v=54"></script>
+    <script src="./src/patches/frame-rate.js?v=54"></script>
+    <script src="./src/patches/field-movement.js?v=54"></script>
+    <script src="./src/patches/field-misc.js?v=54"></script>
+    <script src="./src/patches/summary-screen.js?v=54"></script>
+    <script src="./src/patches/overworld-sprites.js?v=54"></script>
+    <script src="./src/patches/item-expansion.js?v=54"></script>
+    <script src="./src/patches/extra-tms.js?v=54"></script>
+    <script src="./app.js?v=54"></script>
+    <script src="./src/ui/init-ui.js?v=54"></script>
   </body>
 </html>

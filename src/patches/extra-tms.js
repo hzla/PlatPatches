@@ -40,7 +40,11 @@
     getOverlayRange,
     hex,
     locateUniquePatch,
+    messageBankEntries,
+    narcMemberBytes,
     parseNarc,
+    readSyntheticOverlayMember,
+    readU16,
     readU32,
     requireBytes,
     replaceNarcMembers,
@@ -53,7 +57,10 @@
   const MARKER_TEXT = "EXTRATMSV1";
   const MARKER = asciiBytes(`${MARKER_TEXT}\0\0\0\0\0\0`);
   const MAX_EXTRA_TMS = 60;
+  const VANILLA_EXTRA_TM_ROWS = 28;
   const PERSONAL_NARC_PATH = "poketool/personal/pl_personal.narc";
+  const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
+  const SPECIES_NAMES_MESSAGE_MEMBER = 412;
   const VANILLA_EXTRA_TM_MASK_4_OFFSET = 0x28;
   const VANILLA_EXTRA_TM_93_120_MASK = 0xfffffff0;
 
@@ -107,7 +114,161 @@
     if (!itemExpansionPatches || typeof itemExpansionPatches.expandedExtraTmEntries !== "function") {
       throw new PatchError("Expanded Extra TMs require the Item Expansion patch module.");
     }
-    return itemExpansionPatches.expandedExtraTmEntries(rom, { ...options, extraTmsAutoExpandedItems: true });
+    const optionRows = Array.isArray(options.extraTms) ? options.extraTms : [];
+    return itemExpansionPatches
+      .expandedExtraTmEntries(rom, { ...options, extraTmsAutoExpandedItems: true })
+      .map((entry, index) => {
+        const optionRow = optionRows[index] || {};
+        const hasCompatibility =
+          Object.prototype.hasOwnProperty.call(optionRow, "compatiblePokemon") ||
+          Object.prototype.hasOwnProperty.call(optionRow, "compatibleSpecies") ||
+          Object.prototype.hasOwnProperty.call(optionRow, "compatibility");
+        if (!hasCompatibility) {
+          return entry;
+        }
+        return {
+          ...entry,
+          compatiblePokemon:
+            optionRow.compatiblePokemon !== undefined
+              ? optionRow.compatiblePokemon
+              : optionRow.compatibleSpecies !== undefined
+                ? optionRow.compatibleSpecies
+                : optionRow.compatibility,
+        };
+      });
+  }
+
+  function normalizeName(name) {
+    return String(name || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function readSpeciesNames(rom) {
+    const file = findFileByPath(rom, MESSAGE_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    return messageBankEntries(narcMemberBytes(narc, SPECIES_NAMES_MESSAGE_MEMBER));
+  }
+
+  function parseIntegerToken(token) {
+    if (typeof token === "number" && Number.isInteger(token)) {
+      return token;
+    }
+    const text = token === undefined || token === null ? "" : String(token).trim();
+    if (/^0x[0-9a-f]+$/i.test(text)) {
+      return Number.parseInt(text.slice(2), 16);
+    }
+    if (/^[0-9]+$/.test(text)) {
+      return Number.parseInt(text, 10);
+    }
+    return null;
+  }
+
+  function compatibilityTokens(value) {
+    if (value === undefined) {
+      return null;
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    return String(value)
+      .split(/[,\n;]/)
+      .map((token) => token.trim())
+      .filter(Boolean);
+  }
+
+  function parseCompatiblePokemon(value, speciesNames, personalCount, label) {
+    const tokens = compatibilityTokens(value);
+    if (tokens === null) {
+      return null;
+    }
+    const normalizedToId = new Map();
+    speciesNames.forEach((name, id) => {
+      const normalized = normalizeName(name);
+      if (normalized && !normalizedToId.has(normalized)) {
+        normalizedToId.set(normalized, id);
+      }
+    });
+
+    const ids = new Set();
+    for (const token of tokens) {
+      const numeric = parseIntegerToken(token);
+      let id = numeric;
+      if (id === null) {
+        id = normalizedToId.get(normalizeName(token));
+      }
+      if (!Number.isInteger(id)) {
+        throw new PatchError(`Extra TMs ${label} compatible Pokemon "${token}" was not found in the ROM species-name text bank.`);
+      }
+      if (id < 1 || id >= personalCount) {
+        throw new PatchError(`Extra TMs ${label} compatible Pokemon ${hex(id)} is outside personal entries 1-${personalCount - 1}.`);
+      }
+      ids.add(id);
+    }
+    return ids;
+  }
+
+  function readPersonalMembers(rom) {
+    const file = findFileByPath(rom, PERSONAL_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const parsed = parseNarc(narc);
+    return {
+      file,
+      narc,
+      parsed,
+      members: parsed.entries.map((entry) =>
+        narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end)
+      ),
+    };
+  }
+
+  function existingExtraTmCompatibility(rom, personalMembers) {
+    const sets = Array.from({ length: MAX_EXTRA_TMS }, () => new Set());
+    let installed = false;
+    let synth = null;
+    try {
+      synth = readSyntheticOverlayMember(rom).member;
+    } catch (error) {
+      synth = null;
+    }
+    if (synth) {
+      installed = findNeedle(synth, MARKER, 0, synth.length).length > 0;
+    }
+    if (!installed) {
+      return { installed, sets };
+    }
+
+    for (let memberId = 0; memberId < personalMembers.length; memberId += 1) {
+      const member = personalMembers[memberId];
+      if (member.length < VANILLA_EXTRA_TM_MASK_4_OFFSET + 4) {
+        continue;
+      }
+      const mask = readU32(member, VANILLA_EXTRA_TM_MASK_4_OFFSET);
+      for (let row = 0; row < VANILLA_EXTRA_TM_ROWS; row += 1) {
+        if (mask & ((1 << (row + 4)) >>> 0)) {
+          sets[row].add(memberId);
+        }
+      }
+    }
+
+    const markerOffsets = findNeedle(synth, MARKER, 0, synth.length);
+    const markerOffset = markerOffsets[markerOffsets.length - 1];
+    const tableOffset = markerOffset + MARKER.length + 0x500;
+    const compatMaskOffset = tableOffset + 8 + MAX_EXTRA_TMS * 4;
+    if (compatMaskOffset + personalMembers.length * 4 <= synth.length) {
+      for (let memberId = 0; memberId < personalMembers.length; memberId += 1) {
+        const mask = readU32(synth, compatMaskOffset + memberId * 4);
+        for (let row = VANILLA_EXTRA_TM_ROWS; row < MAX_EXTRA_TMS; row += 1) {
+          if (mask & ((1 << (row - VANILLA_EXTRA_TM_ROWS)) >>> 0)) {
+            sets[row].add(memberId);
+          }
+        }
+      }
+    }
+
+    return { installed, sets };
   }
 
   function thumbAbsoluteBranch(targetAddress) {
@@ -166,11 +327,25 @@
     };
   }
 
-  function patchExtraTmPersonalCompatibility(rom, log) {
-    const file = findFileByPath(rom, PERSONAL_NARC_PATH);
-    const narc = rom.slice(file.start, file.end);
-    const parsed = parseNarc(narc);
+  function patchExtraTmPersonalCompatibility(rom, log, entries) {
+    const personal = readPersonalMembers(rom);
+    const { file, narc, parsed, members } = personal;
+    const existing = existingExtraTmCompatibility(rom, members);
+    const speciesNames = readSpeciesNames(rom);
+    const desiredSets = entries.map((entry, index) => {
+      const parsedSet = parseCompatiblePokemon(
+        entry.compatiblePokemon,
+        speciesNames,
+        members.length,
+        `TM${entry.tmNumber}`
+      );
+      if (parsedSet) {
+        return parsedSet;
+      }
+      return existing.installed ? new Set(existing.sets[index]) : new Set();
+    });
     const replacements = [];
+    const expandedCompatMasks = Array.from({ length: members.length }, () => 0);
 
     for (let memberId = 0; memberId < parsed.entries.length; memberId += 1) {
       const entry = parsed.entries[memberId];
@@ -183,7 +358,18 @@
         );
       }
       const current = readU32(member, VANILLA_EXTRA_TM_MASK_4_OFFSET);
-      const next = (current | VANILLA_EXTRA_TM_93_120_MASK) >>> 0;
+      let extraMask = 0;
+      for (let row = 0; row < Math.min(VANILLA_EXTRA_TM_ROWS, entries.length); row += 1) {
+        if (desiredSets[row].has(memberId)) {
+          extraMask = (extraMask | ((1 << (row + 4)) >>> 0)) >>> 0;
+        }
+      }
+      for (let row = VANILLA_EXTRA_TM_ROWS; row < entries.length; row += 1) {
+        if (desiredSets[row].has(memberId)) {
+          expandedCompatMasks[memberId] = (expandedCompatMasks[memberId] | ((1 << (row - VANILLA_EXTRA_TM_ROWS)) >>> 0)) >>> 0;
+        }
+      }
+      const next = ((current & ~VANILLA_EXTRA_TM_93_120_MASK) | extraMask) >>> 0;
       if (next !== current) {
         const patched = new Uint8Array(member);
         writeU32(patched, VANILLA_EXTRA_TM_MASK_4_OFFSET, next);
@@ -192,23 +378,25 @@
     }
 
     if (!replacements.length) {
-      log.push("Extra TMs: TM93-TM120 personal compatibility bits already set for every personal entry.");
+      log.push("Extra TMs: TM93-TM120 personal compatibility bits already match configured lists.");
       return {
         rom,
-        expandedCompatMasks: Array.from({ length: parsed.entries.length }, () => 0xffffffff),
+        expandedCompatMasks,
+        compatibilityCounts: desiredSets.map((set) => set.size),
       };
     }
 
     const patchedNarc = replaceNarcMembers(narc, replacements);
     const result = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Extra TMs personal compatibility");
     log.push(
-      `Extra TMs: set TM93-TM120 compatibility bits for ${replacements.length} personal entr${
+      `Extra TMs: updated TM93-TM120 compatibility bits for ${replacements.length} personal entr${
         replacements.length === 1 ? "y" : "ies"
       } in ${PERSONAL_NARC_PATH}.`
     );
     return {
       rom: result.rom,
-      expandedCompatMasks: Array.from({ length: parsed.entries.length }, () => 0xffffffff),
+      expandedCompatMasks,
+      compatibilityCounts: desiredSets.map((set) => set.size),
     };
   }
 
@@ -364,7 +552,7 @@
     if (entries.length > MAX_EXTRA_TMS) {
       throw new PatchError(`Extra TMs accepts at most ${MAX_EXTRA_TMS} expanded TM row(s).`);
     }
-    const compatibility = patchExtraTmPersonalCompatibility(rom, log);
+    const compatibility = patchExtraTmPersonalCompatibility(rom, log, entries);
     rom = compatibility.rom;
     await patchExtraTmArm9Hooks(rom, force, log, entries, compatibility.expandedCompatMasks);
     log.push(
@@ -374,11 +562,14 @@
     );
     log.push(
       `Extra TMs: configured ${entries
-        .map((entry) => `TM${entry.tmNumber}=${hex(entry.itemId)} move ${hex(entry.moveId)} compat ${entry.compatBit}`)
+        .map(
+          (entry, index) =>
+            `TM${entry.tmNumber}=${hex(entry.itemId)} move ${hex(entry.moveId)} compat ${entry.compatBit} (${compatibility.compatibilityCounts[index]} Pokemon)`
+        )
         .join(", ")}.`
     );
     log.push(
-      "Extra TMs: TM93-TM120 use the vanilla fourth personal TM mask; TM121-TM152 use the expanded compatibility table and currently default to all Pokemon compatible."
+      "Extra TMs: TM93-TM120 use the vanilla fourth personal TM mask; TM121-TM152 use the expanded compatibility table. Fresh rows default to no compatible Pokemon; already-patched ROMs preserve compatibility when rows are not supplied."
     );
     return rom;
   }

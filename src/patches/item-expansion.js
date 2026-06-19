@@ -50,10 +50,16 @@
   const MAX_VANILLA_ITEM_ID = 467;
   const MAX_EXPANDED_ITEMS = 128;
   const EXTRA_TM_COUNT = 60;
+  const NATURE_MINT_COUNT = 25;
+  const BOTTLE_CAP_COUNT = 7;
+  const ITEM_POTION = 0x011;
   const ITEM_TM01 = 0x148;
   const MOVE_KARATE_CHOP = 0x0002;
 
   const ITEM_DATA_NARC_PATH = "itemtool/itemdata/pl_item_data.narc";
+  const ITEM_ICON_NARC_PATH = "itemtool/itemdata/item_icon.narc";
+  const ITEM_ICON_NCGR_LENGTH = 560;
+  const ITEM_ICON_NCLR_LENGTH = 552;
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
   const MOVE_DATA_NARC_PATH = "poketool/waza/pl_waza_tbl.narc";
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
@@ -75,11 +81,94 @@
   const SAVE_DATA_PTR_RAM = 0x020245a4;
   const SAVE_DATA_SAVE_TABLE_RAM = 0x020245bc;
   const SAVE_DATA_SET_CHECKSUM_RAM = 0x02025c84;
-  const OVERFLOW_STORAGE_SAVE_TABLE_ID = 28; // SAVE_TABLE_ENTRY_RANKINGS
-  const OVERFLOW_STORAGE_OFFSET = 0x0ba0; // Last 0x300 bytes before Rankings checksum.
+  const OVERFLOW_STORAGE_SAVE_TABLE_ID = 30; // SAVE_TABLE_ENTRY_WIFI_HISTORY
+  const OVERFLOW_STORAGE_OFFSET = 0x0cfc; // Last 0x300 bytes before Wi-Fi History checksum.
   const BAG_CONTEXT_NEW_RAM = 0x0207cb08;
   const BAG_CONTEXT_INIT_POCKET_RAM = 0x0207cb48;
   const POCKET_SORT_EMPTY_RAM = 0x0207d780;
+
+  const NATURE_NAMES = [
+    "Hardy",
+    "Lonely",
+    "Brave",
+    "Adamant",
+    "Naughty",
+    "Bold",
+    "Docile",
+    "Relaxed",
+    "Impish",
+    "Lax",
+    "Timid",
+    "Hasty",
+    "Serious",
+    "Jolly",
+    "Naive",
+    "Modest",
+    "Mild",
+    "Quiet",
+    "Bashful",
+    "Rash",
+    "Calm",
+    "Gentle",
+    "Sassy",
+    "Careful",
+    "Quirky",
+  ];
+  const NATURE_MINT_PALETTES = [
+    "pink",
+    "red",
+    "red",
+    "red",
+    "red",
+    "yellow",
+    "pink",
+    "yellow",
+    "yellow",
+    "yellow",
+    "lightBlue",
+    "lightBlue",
+    "pink",
+    "lightBlue",
+    "lightBlue",
+    "blue",
+    "blue",
+    "blue",
+    "pink",
+    "blue",
+    "green",
+    "green",
+    "green",
+    "green",
+    "pink",
+  ];
+  const MINT_ICON_NCGR_BASE64 =
+    "UkdDTv/+AQEwAgAAEAABAFJBSEMgAgAA/////wMAAAAQAAAAAAAAAAACAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwdwBwNzMAAAAAAAAAAAAAAAAAAHAHAAAXcgBwE3MAJxMzdzYxIwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANyMzcDIRERcREzNwRCMzAHdFRAAAd1cAAAB3AAAAADM2MUIzYyJ0IWNSBzM1VnUzZGciZSZGNDYjU0QnI0NFBwAAAAAAAAB3dwAAMzMHADEzcwATMTIHMxMzBzMyMXMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANDFDdTQhQwc3MXQANzF0AEdCBwBwdwAAAAAAAAAAAABFMxNzd1VEcgB3dwcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  const MINT_PALETTE_BASE64 = {
+    red: "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9Xn04fOj8hGR3yHKoUpRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    yellow:
+      "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9X/3e/V1xHOVfxKUsZpRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    blue: "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9X1X5Qfux9aHnlWKJkpRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    green:
+      "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9X1kvTQy0zSSLHHQQRpRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    lightBlue:
+      "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9XlntRd+VyoHLlTQA1pRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    pink: "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAAAgAAEAAAAA9XPXO/ah9iXVXyMK8opRQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  };
+  const BOTTLE_CAP_DEFS = [
+    { name: "Atk Cap", statName: "Attack", targetParam: 71, paletteKey: "bottle" },
+    { name: "Def Cap", statName: "Defense", targetParam: 72, paletteKey: "bottle" },
+    { name: "Spa Cap", statName: "Sp. Atk", targetParam: 74, paletteKey: "bottle" },
+    { name: "SpDef Cap", statName: "Sp. Def", targetParam: 75, paletteKey: "bottle" },
+    { name: "Spd Cap", statName: "Speed", targetParam: 73, paletteKey: "bottle" },
+    { name: "HP Cap", statName: "HP", targetParam: 70, paletteKey: "bottle" },
+    { name: "Gold Cap", statName: "all stats", targetParam: 0xff, paletteKey: "gold" },
+  ];
+  const BOTTLE_CAP_ICON_NCGR_BASE64 =
+    "UkdDTv/+AQEwAgAAEAABAFJBSEMgAgAA/////wMAAAAQAAAAAAAAAAACAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACQAAAAOQAAkEMAAAAAAAAAAAAAAAAAAAAAkJmZADlCMpkkFCQ0QRFBQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkAAACTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlCAABZQgAAWUIAAFkxAABZFAAAiUcAAJBIAAAAWTERMUETMRFDMRQ0QRQxETRDREQTISIiQUdXV1hHV1hYYgkAAFIJAABSCQAAUQkAAFQJAACHCQAAmAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWYd4mZCZmQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  const BOTTLE_CAP_PALETTE_BASE64 = {
+    bottle: "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAQAAAAAAAAAA9XvXd7cxdnclrtSYs9y1FpPcYYAAAAAAAAAAAAAAAA",
+    gold: "UkxDTv/+AAEoAgAAEAABAFRUTFAYAgAAAwAAAAAAAAAQAAAAAAAAAA9X31u/JxsruSoXJrQh9SWzIcYYAAAAAAAAAAAAAAAA",
+  };
 
   const SCRIPT_HEADER_END = 0xfd13;
   const SCRIPT_CMD_JUMP = 0x0016;
@@ -134,6 +223,108 @@
       return Number.parseInt(text, 10);
     }
     throw new PatchError(`${label} "${text}" is not a valid decimal or hex number.`);
+  }
+
+  function bytesFromBase64(text) {
+    if (typeof Buffer !== "undefined") {
+      return new Uint8Array(Buffer.from(text, "base64"));
+    }
+    const binary = atob(text);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      out[i] = binary.charCodeAt(i);
+    }
+    return out;
+  }
+
+  function fixedLengthAssetBytes(text, expectedLength, label) {
+    const bytes = bytesFromBase64(text);
+    if (bytes.length > expectedLength) {
+      throw new PatchError(`${label} is ${bytes.length} byte(s); expected at most ${expectedLength}.`);
+    }
+    if (bytes.length === expectedLength) {
+      return bytes;
+    }
+    const out = new Uint8Array(expectedLength);
+    out.set(bytes);
+    return out;
+  }
+
+  function narcMemberAt(narc, parsed, memberId) {
+    const entry = parsed.entries[memberId];
+    return narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end);
+  }
+
+  function rebuildNarcWithMembers(narc, members) {
+    const parsed = parseNarc(narc);
+    const beforeFat = narc.slice(0, parsed.fatBlock.offset);
+    const betweenFatAndData = narc.slice(parsed.fatBlock.offset + parsed.fatBlock.size, parsed.dataBlock.offset);
+    const fatSize = 12 + members.length * 8;
+    const chunks = [];
+    const rebuiltEntries = [];
+    let cursor = 0;
+
+    for (const member of members) {
+      rebuiltEntries.push({ start: cursor, end: cursor + member.length });
+      chunks.push(member);
+      cursor += member.length;
+      const aligned = (cursor + 3) & ~3;
+      if (aligned !== cursor) {
+        chunks.push(new Uint8Array(aligned - cursor));
+        cursor = aligned;
+      }
+    }
+
+    const dataSize = 8 + cursor;
+    const out = new Uint8Array(beforeFat.length + fatSize + betweenFatAndData.length + dataSize);
+    let outCursor = 0;
+    out.set(beforeFat, outCursor);
+    outCursor += beforeFat.length;
+
+    out.set(narc.slice(parsed.fatBlock.offset, parsed.fatBlock.offset + 4), outCursor);
+    writeU32(out, outCursor + 4, fatSize);
+    writeU32(out, outCursor + 8, members.length);
+    for (let i = 0; i < rebuiltEntries.length; i += 1) {
+      const entry = outCursor + 12 + i * 8;
+      writeU32(out, entry, rebuiltEntries[i].start);
+      writeU32(out, entry + 4, rebuiltEntries[i].end);
+    }
+    outCursor += fatSize;
+
+    out.set(betweenFatAndData, outCursor);
+    outCursor += betweenFatAndData.length;
+
+    out.set(narc.slice(parsed.dataBlock.offset, parsed.dataBlock.offset + 4), outCursor);
+    writeU32(out, outCursor + 4, dataSize);
+    outCursor += 8;
+    let dataCursor = outCursor;
+    for (const chunk of chunks) {
+      out.set(chunk, dataCursor);
+      dataCursor += chunk.length;
+    }
+
+    writeU32(out, 8, out.length);
+    return out;
+  }
+
+  function ensureNarcMember(narc, memberBytes) {
+    const parsed = parseNarc(narc);
+    for (let memberId = 0; memberId < parsed.entries.length; memberId += 1) {
+      const existing = narcMemberAt(narc, parsed, memberId);
+      if (existing.length === memberBytes.length && bytesEqual(existing, 0, memberBytes)) {
+        return { narc, memberId, added: false };
+      }
+    }
+
+    const members = parsed.entries.map((entry) =>
+      narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end)
+    );
+    members.push(memberBytes);
+    return {
+      narc: rebuildNarcWithMembers(narc, members),
+      memberId: parsed.entries.length,
+      added: true,
+    };
   }
 
   function rowSources(source) {
@@ -282,12 +473,52 @@
     return rows;
   }
 
+  function autoNatureMintRows(options = {}) {
+    if (!options.natureMintsAutoExpandedItems) {
+      return [];
+    }
+    return NATURE_NAMES.map((natureName, natureIndex) => ({
+      cloneFrom: ITEM_POTION,
+      iconFrom: ITEM_POTION,
+      name: `${natureName} Mint`,
+      article: `a {COLOR 255}${natureName} Mint{COLOR 0}`,
+      plural: `${natureName} Mints`,
+      description: `A mint that changes a Pokemon's nature to ${natureName}.`,
+      source: "natureMints",
+      natureIndex,
+      paletteKey: NATURE_MINT_PALETTES[natureIndex],
+    }));
+  }
+
+  function autoBottleCapRows(options = {}) {
+    if (!options.bottleCapsAutoExpandedItems) {
+      return [];
+    }
+    return BOTTLE_CAP_DEFS.map((def) => ({
+      cloneFrom: ITEM_POTION,
+      iconFrom: ITEM_POTION,
+      name: def.name,
+      article: `a {COLOR 255}${def.name}{COLOR 0}`,
+      plural: `${def.name}s`,
+      description:
+        def.targetParam === 0xff
+          ? "A cap that maximizes all of a Pokemon's IVs."
+          : `A cap that maximizes a Pokemon's ${def.statName} IV.`,
+      source: "bottleCaps",
+      targetParam: def.targetParam,
+      statName: def.statName,
+      paletteKey: def.paletteKey,
+    }));
+  }
+
   function normalizedExpandedItemRows(options = {}, rom) {
     const manualRows = rowSources(options.expandedItems).map((row) => ({ ...row, source: "manual" }));
     const hasManualTmRows = manualRows.some((row) => isTruthy(row.isTm));
     const rows = [
       ...manualRows,
       ...(rom && options.extraTmsAutoExpandedItems && !hasManualTmRows ? autoExtraTmRows(rom, options) : []),
+      ...autoNatureMintRows(options),
+      ...autoBottleCapRows(options),
     ];
     if (rows.length < 1 || rows.length > MAX_EXPANDED_ITEMS) {
       throw new PatchError(`Item Expansion needs 1-${MAX_EXPANDED_ITEMS} configured item row(s).`);
@@ -372,6 +603,13 @@
         compatBit: isTm ? 100 + tmRowIndex : null,
         moveId: parsedMove ? parsedMove.moveId : row.moveId,
         moveName: parsedMove ? parsedMove.moveName : row.moveName,
+        natureIndex: row.natureIndex,
+        targetParam: row.targetParam,
+        statName: row.statName,
+        paletteKey: row.paletteKey,
+        dataMember: row.dataMember,
+        iconMember: row.iconMember,
+        paletteMember: row.paletteMember,
       };
       if (isTm) {
         tmRowIndex += 1;
@@ -397,6 +635,38 @@
       }));
   }
 
+  function expandedNatureMintEntries(rom, options = {}) {
+    return normalizedExpandedItemRows(options, rom)
+      .filter((row) => row.source === "natureMints")
+      .map((row) => ({
+        itemId: row.itemId,
+        natureIndex: row.natureIndex,
+        natureName: NATURE_NAMES[row.natureIndex] || `Nature ${row.natureIndex}`,
+      }));
+  }
+
+  function expandedBottleCapEntries(rom, options = {}) {
+    return normalizedExpandedItemRows(options, rom)
+      .filter((row) => row.source === "bottleCaps")
+      .map((row) => ({
+        itemId: row.itemId,
+        targetParam: row.targetParam,
+        statName: row.statName,
+        name: row.name,
+      }));
+  }
+
+  function buildMintItemData() {
+    const data = new Uint8Array(34);
+    writeU16(data, 0, 10000);
+    data[6] = 30;
+    writeU16(data, 8, (1 << 6) | (1 << 7)); // selectable, Medicine pocket, no battle pocket
+    data[10] = 1; // ITEM_USE_FUNC_HEALING
+    data[11] = 0;
+    data[12] = 1; // Party use opens the party item flow.
+    return data;
+  }
+
   function itemTableEntryRomOffset(rom, itemId) {
     const arm9 = getArm9Info(rom);
     const offset = ITEM_TABLE_ARM9_OFFSET + itemId * ITEM_TABLE_ENTRY_SIZE;
@@ -415,6 +685,10 @@
       palette: readU16(rom, offset + 4),
       gen3: readU16(rom, offset + 6),
     };
+  }
+
+  function itemDataFieldPocket(data) {
+    return (readU16(data, 8) >>> 7) & 0x0f;
   }
 
   function thumbAbsoluteBranch(targetAddress) {
@@ -514,17 +788,161 @@
   function buildArchiveEntries(rom, rows) {
     const itemDataFile = findFileByPath(rom, ITEM_DATA_NARC_PATH);
     const itemDataNarc = rom.slice(itemDataFile.start, itemDataFile.end);
+    const itemIconFile = findFileByPath(rom, ITEM_ICON_NARC_PATH);
+    const itemIconNarc = rom.slice(itemIconFile.start, itemIconFile.end);
     return rows.map((row) => {
       const clone = readItemTableEntry(rom, row.cloneFrom);
       const icon = readItemTableEntry(rom, row.iconFrom);
-      narcMemberBytes(itemDataNarc, clone.data);
+      const dataMember = row.dataMember === undefined ? clone.data : row.dataMember;
+      const iconMember = row.iconMember === undefined ? icon.icon : row.iconMember;
+      const paletteMember = row.paletteMember === undefined ? icon.palette : row.paletteMember;
+      const dataMemberBytes = narcMemberBytes(itemDataNarc, dataMember);
+      narcMemberBytes(itemIconNarc, iconMember);
+      narcMemberBytes(itemIconNarc, paletteMember);
       return {
-        data: clone.data,
-        icon: icon.icon,
-        palette: icon.palette,
+        data: dataMember,
+        icon: iconMember,
+        palette: paletteMember,
         gen3: 0,
+        fieldPocket: itemDataFieldPocket(dataMemberBytes),
       };
     });
+  }
+
+  function patchNatureMintAssets(rom, log, rows) {
+    const natureRows = rows.filter((row) => row.source === "natureMints");
+    if (!natureRows.length) {
+      return { rom, rows };
+    }
+
+    const addedKinds = [];
+    let currentRom = rom;
+
+    const dataFile = findFileByPath(currentRom, ITEM_DATA_NARC_PATH);
+    const dataNarc = currentRom.slice(dataFile.start, dataFile.end);
+    const dataResult = ensureNarcMember(dataNarc, buildMintItemData());
+    if (dataResult.added) {
+      addedKinds.push("item data");
+      currentRom = replaceRomFileAllowGrowth(currentRom, dataFile, dataResult.narc, "Nature Mints item data").rom;
+    }
+
+    const iconFile = findFileByPath(currentRom, ITEM_ICON_NARC_PATH);
+    let iconNarc = currentRom.slice(iconFile.start, iconFile.end);
+    const iconResult = ensureNarcMember(
+      iconNarc,
+      fixedLengthAssetBytes(MINT_ICON_NCGR_BASE64, ITEM_ICON_NCGR_LENGTH, "Nature Mints icon")
+    );
+    iconNarc = iconResult.narc;
+    if (iconResult.added) {
+      addedKinds.push("icon");
+    }
+
+    const paletteMembers = {};
+    let paletteAddCount = 0;
+    for (const [key, encoded] of Object.entries(MINT_PALETTE_BASE64)) {
+      const result = ensureNarcMember(
+        iconNarc,
+        fixedLengthAssetBytes(encoded, ITEM_ICON_NCLR_LENGTH, `Nature Mints ${key} palette`)
+      );
+      iconNarc = result.narc;
+      paletteMembers[key] = result.memberId;
+      if (result.added) {
+        paletteAddCount += 1;
+      }
+    }
+    if (paletteAddCount) {
+      addedKinds.push(`${paletteAddCount} palette${paletteAddCount === 1 ? "" : "s"}`);
+    }
+
+    if (iconResult.added || paletteAddCount) {
+      currentRom = replaceRomFileAllowGrowth(currentRom, iconFile, iconNarc, "Nature Mints item icons").rom;
+    }
+
+    const updatedRows = rows.map((row) =>
+      row.source === "natureMints"
+        ? {
+            ...row,
+            dataMember: dataResult.memberId,
+            iconMember: iconResult.memberId,
+            paletteMember: paletteMembers[row.paletteKey || "pink"],
+          }
+        : row
+    );
+
+    log.push(
+      `Nature Mints: ${
+        addedKinds.length ? `installed ${addedKinds.join(", ")}` : "mint item data/icon/palettes already installed"
+      } for ${NATURE_MINT_COUNT} expanded mint item(s).`
+    );
+    return { rom: currentRom, rows: updatedRows };
+  }
+
+  function patchBottleCapAssets(rom, log, rows) {
+    const bottleRows = rows.filter((row) => row.source === "bottleCaps");
+    if (!bottleRows.length) {
+      return { rom, rows };
+    }
+
+    const addedKinds = [];
+    let currentRom = rom;
+
+    const dataFile = findFileByPath(currentRom, ITEM_DATA_NARC_PATH);
+    const dataNarc = currentRom.slice(dataFile.start, dataFile.end);
+    const dataResult = ensureNarcMember(dataNarc, buildMintItemData());
+    if (dataResult.added) {
+      addedKinds.push("item data");
+      currentRom = replaceRomFileAllowGrowth(currentRom, dataFile, dataResult.narc, "Bottle Caps item data").rom;
+    }
+
+    const iconFile = findFileByPath(currentRom, ITEM_ICON_NARC_PATH);
+    let iconNarc = currentRom.slice(iconFile.start, iconFile.end);
+    const iconResult = ensureNarcMember(
+      iconNarc,
+      fixedLengthAssetBytes(BOTTLE_CAP_ICON_NCGR_BASE64, ITEM_ICON_NCGR_LENGTH, "Bottle Caps icon")
+    );
+    iconNarc = iconResult.narc;
+    if (iconResult.added) {
+      addedKinds.push("icon");
+    }
+
+    const paletteMembers = {};
+    let paletteAddCount = 0;
+    for (const [key, encoded] of Object.entries(BOTTLE_CAP_PALETTE_BASE64)) {
+      const result = ensureNarcMember(
+        iconNarc,
+        fixedLengthAssetBytes(encoded, ITEM_ICON_NCLR_LENGTH, `Bottle Caps ${key} palette`)
+      );
+      iconNarc = result.narc;
+      paletteMembers[key] = result.memberId;
+      if (result.added) {
+        paletteAddCount += 1;
+      }
+    }
+    if (paletteAddCount) {
+      addedKinds.push(`${paletteAddCount} palette${paletteAddCount === 1 ? "" : "s"}`);
+    }
+
+    if (iconResult.added || paletteAddCount) {
+      currentRom = replaceRomFileAllowGrowth(currentRom, iconFile, iconNarc, "Bottle Caps item icons").rom;
+    }
+
+    const updatedRows = rows.map((row) =>
+      row.source === "bottleCaps"
+        ? {
+            ...row,
+            dataMember: dataResult.memberId,
+            iconMember: iconResult.memberId,
+            paletteMember: paletteMembers[row.paletteKey || "bottle"],
+          }
+        : row
+    );
+
+    log.push(
+      `Bottle Caps: ${
+        addedKinds.length ? `installed ${addedKinds.join(", ")}` : "cap item data/icon/palettes already installed"
+      } for ${BOTTLE_CAP_COUNT} expanded cap item(s).`
+    );
+    return { rom: currentRom, rows: updatedRows };
   }
 
   function patchExpandedItemText(rom, log, rows) {
@@ -693,7 +1111,14 @@
   }
 
   async function patchItemExpansion(rom, force, log, options = {}) {
-    const rows = normalizedExpandedItemRows(options, rom);
+    const originalRom = rom;
+    let rows = normalizedExpandedItemRows(options, rom);
+    const assets = patchNatureMintAssets(rom, log, rows);
+    rom = assets.rom;
+    rows = assets.rows;
+    const bottleAssets = patchBottleCapAssets(rom, log, rows);
+    rom = bottleAssets.rom;
+    rows = bottleAssets.rows;
     const archiveEntries = buildArchiveEntries(rom, rows);
     await patchItemExpansionArm9Hooks(rom, force, log, archiveEntries);
     const textPatchedRom = patchExpandedItemText(rom, log, rows);
@@ -708,13 +1133,15 @@
         )
         .join(", ")}.`
     );
-    return patchedRom === rom ? undefined : patchedRom;
+    return patchedRom === originalRom ? undefined : patchedRom;
   }
 
   return {
     itemExpansion: patchItemExpansion,
     normalizedExpandedItemRows,
     expandedExtraTmEntries,
+    expandedNatureMintEntries,
+    expandedBottleCapEntries,
     extraTmsExpandedCountOption,
     readMoveNames,
     manualExpandedItemCount,

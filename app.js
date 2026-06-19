@@ -205,6 +205,26 @@
     throw new Error("PlatinumPatcherExtraTmPatches failed to load.");
   }
 
+  const natureMintPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/nature-mints.js")(core, itemExpansionPatches)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherNatureMintPatches
+        : undefined;
+  if (!natureMintPatches) {
+    throw new Error("PlatinumPatcherNatureMintPatches failed to load.");
+  }
+
+  const bottleCapPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/bottle-caps.js")(core, itemExpansionPatches)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherBottleCapPatches
+        : undefined;
+  if (!bottleCapPatches) {
+    throw new Error("PlatinumPatcherBottleCapPatches failed to load.");
+  }
+
   const { createPatchRegistry } = registryModule;
   const {
     PatchError,
@@ -271,6 +291,8 @@
     infiniteTMs: "Infinite TMs",
     itemExpansion: "Item Expansion",
     extraTMs: "Extra TMs",
+    natureMints: "Nature Mints",
+    bottleCaps: "Bottle Caps",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
     instantText: "Force fast text",
@@ -279,7 +301,7 @@
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
   };
-  const APP_VERSION = "v58";
+  const APP_VERSION = "v60";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -589,12 +611,12 @@
     itemExpansion: {
       title: "Item Expansion",
       summary:
-        "Adds real new item IDs starting at 468 through a synthetic-overlay overflow item table and rankings-save overflow bag rows. Rows can optionally behave as extra TMs.",
+        "Adds real new item IDs starting at 468 through a synthetic-overlay overflow item table and Wi-Fi History overflow bag rows. Rows can optionally behave as extra TMs.",
       regions: [
         "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker ITEMEXPV1.",
         "ARM9 hooks: Item_FileID at RAM 0x0207CE78, Item_Load at RAM 0x0207CF48, Bag_GetPocketForItem at RAM 0x0207D40C, and BagContext_CreateWithPockets at RAM 0x0207D824.",
         "Overflow rows: generated item IDs start at 0x1D4 and point to cloned vanilla data/icon/palette members.",
-        "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_RANKINGS so expanded IDs do not consume vanilla bag pocket slots.",
+        "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_WIFI_HISTORY so expanded IDs do not consume vanilla bag pocket slots.",
         "Bag UI: the TM/HM pocket view is rebuilt from vanilla TM/HMs plus overflow TM rows in synthetic-overlay RAM scratch storage.",
         "Item text: msgdata/pl_msg.narc members 391-394 add names, article names, plural names, and descriptions for expanded IDs.",
         "Overworld pickup compatibility: if DSPRE Item Standardization is already present, the standardized visible-item script file is extended for expanded IDs.",
@@ -613,6 +635,31 @@
         "Move mapping: each TM93-TM152 row can teach a numeric move ID or a move name read from msgdata/pl_msg.narc member 647.",
         "Compatibility: TM93-TM120 use the remaining vanilla personal TM mask bits; TM121-TM152 use an expanded compatibility table in the synthetic overlay. Rows default to no compatible Pokemon unless loaded from an already-patched ROM or configured in the UI.",
         "Item text: Item Expansion writes msgdata/pl_msg.narc members 391-394 for TM93-TM152.",
+      ],
+    },
+    natureMints: {
+      title: "Nature Mints",
+      summary:
+        "Adds 25 expanded Nature Mint items. Each mint changes the Pokemon's actual Gen 4 displayed nature by safely rerolling personality while preserving shiny status, gender, ability slot parity, Unown letter, and Wurmple branch.",
+      regions: [
+        "Requires Item Expansion and the DSPRE ARM9 expansion. Mint helper code is stored in data/weather_sys.narc member 9 with marker NATUREMINTV1.",
+        "ARM9 hooks: Pokemon_CheckItemEffects at RAM 0x02096420 and the party item dispatcher at RAM 0x020852B8.",
+        "Item Expansion appends one custom mint item-data member plus mint icon/palette members to itemtool/itemdata archives.",
+        "Item text: msgdata/pl_msg.narc members 391-394 add the 25 mint names, article names, plural names, and descriptions.",
+        "Party message: msgdata/pl_msg.narc member 453 entry 260 is used for the mint success text.",
+      ],
+    },
+    bottleCaps: {
+      title: "Bottle Caps",
+      summary:
+        "Adds seven expanded Bottle Cap items. Each cap maximizes one IV, or all IVs for Gold Cap, and fails without consuming the item if the selected IVs are already 31.",
+      regions: [
+        "Requires Item Expansion and the DSPRE ARM9 expansion. Bottle Cap helper code is stored in data/weather_sys.narc member 9 with marker BOTTLECAPV1.",
+        "ARM9 hooks: Pokemon_CheckItemEffects at RAM 0x02096420 and the party item dispatcher at RAM 0x020852B8, chained with Nature Mints when both patches are selected.",
+        "Item Expansion appends one shared cap item-data member plus a cap icon and two cap palettes to itemtool/itemdata archives.",
+        "Item text: msgdata/pl_msg.narc members 391-394 add the seven cap names, article names, plural names, and descriptions.",
+        "Party messages: msgdata/pl_msg.narc member 453 entries 261-267 are used for the cap success text.",
+        "Overworld pickup compatibility follows Item Expansion: DSPRE-standardized visible-item scripts are extended through the cap item IDs when Item Standardization is already present.",
       ],
     },
     playerAccuracy: {
@@ -1074,6 +1121,8 @@
     { id: "infiniteTMs", apply: simpleSitePatches.infiniteTMs },
     { id: "itemExpansion", apply: itemExpansionPatches.itemExpansion },
     { id: "extraTMs", apply: extraTmPatches.extraTMs },
+    { id: "natureMints", apply: natureMintPatches.natureMints },
+    { id: "bottleCaps", apply: bottleCapPatches.bottleCaps },
     { id: "fairyType", apply: fairyPatches.fairyType },
     { id: "fairyPokemonTypes", apply: fairyPatches.fairyPokemonTypes },
     { id: "instantText", apply: textSpeedPatches.instantText },
@@ -1104,8 +1153,19 @@
       selected.add("extraTMs");
     }
     const extraTmsUsesExpandedItems = selected.has("extraTMs");
-    const effectiveOptions = { ...options, extraTmsAutoExpandedItems: extraTmsUsesExpandedItems };
+    const effectiveOptions = {
+      ...options,
+      extraTmsAutoExpandedItems: extraTmsUsesExpandedItems,
+      natureMintsAutoExpandedItems: selected.has("natureMints"),
+      bottleCapsAutoExpandedItems: selected.has("bottleCaps"),
+    };
     if (selected.has("extraTMs")) {
+      selected.add("itemExpansion");
+    }
+    if (selected.has("natureMints")) {
+      selected.add("itemExpansion");
+    }
+    if (selected.has("bottleCaps")) {
       selected.add("itemExpansion");
     }
     if (
@@ -1114,7 +1174,9 @@
       selected.has("natureStatColors") ||
       selected.has("customOverworldSprites") ||
       selected.has("itemExpansion") ||
-      selected.has("extraTMs")
+      selected.has("extraTMs") ||
+      selected.has("natureMints") ||
+      selected.has("bottleCaps")
     ) {
       selected.add("arm9Expansion");
     }
@@ -1229,6 +1291,10 @@
               ? "itemexpansion"
             : id === "extraTMs"
               ? "extratms"
+            : id === "natureMints"
+              ? "naturemints"
+            : id === "bottleCaps"
+              ? "bottlecaps"
             : id.replace(/_/g, "")
       )
       .join(".");

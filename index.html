@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=58" />
+    <link rel="stylesheet" href="./styles.css?v=60" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v54</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v60</div>
       </section>
 
       <section class="panel upload-panel">
@@ -366,6 +366,22 @@
               </label>
 
               <label class="patch-card">
+                <input id="natureMintsPatch" type="checkbox" value="natureMints" />
+                <span>
+                  <strong>Nature Mints</strong>
+                  <small>Adds expanded mint items that change a Pokemon's actual displayed nature.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input id="bottleCapsPatch" type="checkbox" value="bottleCaps" />
+                <span>
+                  <strong>Bottle Caps</strong>
+                  <small>Adds expanded cap items that maximize IVs for selected stats.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
                 <input type="checkbox" value="noOverworldPoison" />
                 <span>
                   <strong>Remove overworld poison</strong>
@@ -519,30 +535,32 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=58"></script>
-    <script src="./src/patches/registry.js?v=58"></script>
-    <script src="./src/patches/infrastructure.js?v=58"></script>
-    <script src="./src/patches/simple-sites.js?v=58"></script>
-    <script src="./src/patches/fairy-type.js?v=58"></script>
-    <script src="./vendor/armips/armips.js?v=58"></script>
-    <script src="./src/asm/armips-assembler.js?v=58"></script>
-    <script src="./src/asm/templates.js?v=58"></script>
-    <script src="./src/patches/infinite-candy.js?v=58"></script>
-    <script src="./src/patches/item-renewal.js?v=58"></script>
-    <script src="./src/patches/text-speed.js?v=58"></script>
-    <script src="./src/patches/modern-status.js?v=58"></script>
-    <script src="./src/patches/battle-critical.js?v=58"></script>
-    <script src="./src/patches/rng-generation.js?v=58"></script>
-    <script src="./src/patches/wild-natures.js?v=58"></script>
-    <script src="./src/patches/battle-weather.js?v=58"></script>
-    <script src="./src/patches/frame-rate.js?v=58"></script>
-    <script src="./src/patches/field-movement.js?v=58"></script>
-    <script src="./src/patches/field-misc.js?v=58"></script>
-    <script src="./src/patches/summary-screen.js?v=58"></script>
-    <script src="./src/patches/overworld-sprites.js?v=58"></script>
-    <script src="./src/patches/item-expansion.js?v=58"></script>
-    <script src="./src/patches/extra-tms.js?v=58"></script>
-    <script src="./app.js?v=58"></script>
-    <script src="./src/ui/init-ui.js?v=58"></script>
+    <script src="./src/core.js?v=60"></script>
+    <script src="./src/patches/registry.js?v=60"></script>
+    <script src="./src/patches/infrastructure.js?v=60"></script>
+    <script src="./src/patches/simple-sites.js?v=60"></script>
+    <script src="./src/patches/fairy-type.js?v=60"></script>
+    <script src="./vendor/armips/armips.js?v=60"></script>
+    <script src="./src/asm/armips-assembler.js?v=60"></script>
+    <script src="./src/asm/templates.js?v=60"></script>
+    <script src="./src/patches/infinite-candy.js?v=60"></script>
+    <script src="./src/patches/item-renewal.js?v=60"></script>
+    <script src="./src/patches/text-speed.js?v=60"></script>
+    <script src="./src/patches/modern-status.js?v=60"></script>
+    <script src="./src/patches/battle-critical.js?v=60"></script>
+    <script src="./src/patches/rng-generation.js?v=60"></script>
+    <script src="./src/patches/wild-natures.js?v=60"></script>
+    <script src="./src/patches/battle-weather.js?v=60"></script>
+    <script src="./src/patches/frame-rate.js?v=60"></script>
+    <script src="./src/patches/field-movement.js?v=60"></script>
+    <script src="./src/patches/field-misc.js?v=60"></script>
+    <script src="./src/patches/summary-screen.js?v=60"></script>
+    <script src="./src/patches/overworld-sprites.js?v=60"></script>
+    <script src="./src/patches/item-expansion.js?v=60"></script>
+    <script src="./src/patches/extra-tms.js?v=60"></script>
+    <script src="./src/patches/nature-mints.js?v=60"></script>
+    <script src="./src/patches/bottle-caps.js?v=60"></script>
+    <script src="./app.js?v=60"></script>
+    <script src="./src/ui/init-ui.js?v=60"></script>
   </body>
 </html>

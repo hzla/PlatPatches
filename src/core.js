@@ -544,6 +544,36 @@ function encryptedPlatinumString(text, entryID, label = "Message text") {
   }
 
   for (let i = 0; i < text.length; i += 1) {
+    const strvarMatch = text
+      .slice(i)
+      .match(/^\{STRVAR_1\s+([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\}/);
+    if (strvarMatch) {
+      const [, typeText, arg1Text, arg2Text] = strvarMatch;
+      const type = Number(typeText);
+      const arg1 = Number(arg1Text);
+      const arg2 = Number(arg2Text);
+      if (
+        !Number.isInteger(type) ||
+        type < 0 ||
+        type > 0xff ||
+        !Number.isInteger(arg1) ||
+        arg1 < 0 ||
+        arg1 > 0xffff ||
+        !Number.isInteger(arg2) ||
+        arg2 < 0 ||
+        arg2 > 0xffff
+      ) {
+        throw new PatchError(`${label} has an invalid STRVAR_1 command.`);
+      }
+      pushCode(0xfffe);
+      pushCode(0x0100 | type);
+      pushCode(2);
+      pushCode(arg1);
+      pushCode(arg2);
+      i += strvarMatch[0].length - 1;
+      continue;
+    }
+
     if (text.startsWith("{COLOR ", i)) {
       const end = text.indexOf("}", i);
       if (end === -1) {
@@ -573,10 +603,20 @@ function encryptedPlatinumString(text, entryID, label = "Message text") {
       pushCode(0x01de);
     } else if (ch === ",") {
       pushCode(0x01ad);
+    } else if (ch === "!") {
+      pushCode(0x01ab);
+    } else if (ch === "?") {
+      pushCode(0x01ac);
     } else if (ch === ".") {
       pushCode(0x01ae);
+    } else if (ch === "(") {
+      pushCode(0x01b9);
+    } else if (ch === ")") {
+      pushCode(0x01ba);
     } else if (ch === "-") {
       pushCode(0x01be);
+    } else if (ch === ":") {
+      pushCode(0x01c4);
     } else if (ch === "\n") {
       pushCode(0xe000);
     } else if (ch === "\r") {
@@ -666,12 +706,22 @@ function decodePlatinumChar(code) {
       return "é";
     case 0x01ad:
       return ",";
+    case 0x01ab:
+      return "!";
+    case 0x01ac:
+      return "?";
     case 0x01ae:
       return ".";
     case 0x01b3:
       return "'";
+    case 0x01b9:
+      return "(";
+    case 0x01ba:
+      return ")";
     case 0x01be:
       return "-";
+    case 0x01c4:
+      return ":";
     case 0x01de:
       return " ";
     case 0xe000:
@@ -699,6 +749,16 @@ function decryptedPlatinumString(bytes, entryID) {
 
   let text = "";
   for (let i = 0; i < codes.length; i += 1) {
+    if (codes[i] === 0xfffe && (codes[i + 1] & 0xff00) === 0x0100) {
+      const argCount = codes[i + 2] || 0;
+      const args = [];
+      for (let arg = 0; arg < argCount; arg += 1) {
+        args.push(codes[i + 3 + arg] || 0);
+      }
+      text += `{STRVAR_1 ${[codes[i + 1] & 0xff, ...args].join(", ")}}`;
+      i += 2 + argCount;
+      continue;
+    }
     if (codes[i] === 0xfffe && codes[i + 1] === 0xff00 && codes[i + 2] === 1) {
       text += `{COLOR ${codes[i + 3] || 0}}`;
       i += 3;

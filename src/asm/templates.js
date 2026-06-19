@@ -826,17 +826,17 @@ ${compatMaskWords}
   }) {
     const itemLoadAddress = helperAddress + 0x120;
     const tableAddress = helperAddress + 0x280;
+    const pocketTableAddress = helperAddress + 0x690;
     const bagContextCreateAddress = helperAddress + 0x700;
     const bagGetPocketForItemAddress = helperAddress + 0x860;
     const storageHelperAddress = helperAddress + 0x980;
-    const migrateBagAddress = helperAddress + 0xa40;
-    const migratePocketAddress = helperAddress + 0xb20;
-    const storageInsertAddress = helperAddress + 0xbe0;
+    const medicineScratchBuilderAddress = helperAddress + 0xa40;
     const tmhmScratchAddress = helperAddress + 0xc40;
+    const medicineScratchAddress = helperAddress + 0xec0;
     const paddedEntries = Array.from({ length: maxRows }, (_, index) =>
       index < entries.length
         ? entries[index]
-        : { data: 0, icon: 707, palette: 708, gen3: 0 }
+        : { data: 0, icon: 707, palette: 708, gen3: 0, fieldPocket: 0 }
     );
     const tableRows = paddedEntries
       .map(
@@ -850,6 +850,12 @@ ${compatMaskWords}
             .padStart(4, "0")}, 0x${entry.gen3.toString(16).toUpperCase().padStart(4, "0")}`
       )
       .join("\n");
+    const pocketRows = [];
+    for (let index = 0; index < paddedEntries.length; index += 2) {
+      const low = paddedEntries[index].fieldPocket & 0x0f;
+      const high = ((paddedEntries[index + 1] || { fieldPocket: 0 }).fieldPocket & 0x0f) << 4;
+      pocketRows.push(`  .byte 0x${(low | high).toString(16).toUpperCase().padStart(2, "0")}`);
+    }
 
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
@@ -998,8 +1004,11 @@ ${compatMaskWords}
   mov r1,r5
   b @@ctx_init
 @@ctx_medicine:
-  ldr r1,=0x0000051C
-  add r1,r5,r1
+  mov r0,r5
+  ldr r1,[sp]
+  bl ${hex32(medicineScratchBuilderAddress)}
+  mov r1,r0
+  mov r2,1
   b @@ctx_init
 @@ctx_balls:
   ldr r1,=0x000006BC
@@ -1145,8 +1154,24 @@ ${compatMaskWords}
   mov r0,r7
   bl ${hex32(itemIsTmHmAddress)}
   cmp r0,0
-  beq @@pocket_expanded_storage
+  beq @@pocket_expanded_lookup
   mov r0,3
+  b @@pocket_store_expanded
+@@pocket_expanded_lookup:
+  ldr r1,=${hex32(firstItemId)}
+  sub r2,r7,r1
+  ldr r0,=${hex32(pocketTableAddress)}
+  mov r1,r2
+  lsr r1,r1,1
+  ldrb r0,[r0,r1]
+  mov r1,1
+  tst r2,r1
+  beq @@pocket_low_nibble
+  lsr r0,r0,4
+@@pocket_low_nibble:
+  mov r1,0x0F
+  and r0,r1
+@@pocket_store_expanded:
   str r0,[sp]
 @@pocket_expanded_storage:
   bl ${hex32(storageHelperAddress)}
@@ -1275,129 +1300,99 @@ ${compatMaskWords}
   pop {r4,pc}
   .pool
 
-.org ${hex32(migrateBagAddress)}
-  push {r3,r4,r5,lr}
-  mov r4,r0
-  mov r5,r1
-  mov r0,r4
-  mov r1,0xA5
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x00000294
-  add r0,r4,r0
-  mov r1,0x32
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x0000035C
-  add r0,r4,r0
-  mov r1,0x64
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x000004EC
-  add r0,r4,r0
-  mov r1,0x0C
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x0000051C
-  add r0,r4,r0
-  mov r1,0x28
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x000005BC
-  add r0,r4,r0
-  mov r1,0x40
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x000006BC
-  add r0,r4,r0
-  mov r1,0x0F
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  ldr r0,=0x000006F8
-  add r0,r4,r0
-  mov r1,0x1E
-  mov r2,r5
-  bl ${hex32(migratePocketAddress)}
-  mov r0,r5
-  pop {r3,r4,r5,pc}
-  .pool
-
-.org ${hex32(migratePocketAddress)}
+.org ${hex32(medicineScratchBuilderAddress)}
   push {r4,r5,r6,r7,lr}
-  sub sp,12
+  sub sp,16
   str r0,[sp]
   str r1,[sp,4]
-  str r2,[sp,8]
-  mov r4,0
-@@migrate_pocket_loop:
-  ldr r0,[sp,4]
-  cmp r4,r0
-  bcs @@migrate_pocket_done
-  ldr r5,[sp]
-  lsl r6,r4,2
-  add r5,r5,r6
-  ldrh r6,[r5]
-  cmp r6,0
-  beq @@migrate_pocket_next
-  ldrh r7,[r5,2]
-  cmp r7,0
-  beq @@migrate_pocket_next
-  ldr r0,=${hex32(firstItemId)}
-  cmp r6,r0
-  bcc @@migrate_pocket_next
-  sub r1,r6,r0
-  ldr r0,=${hex32(entries.length)}
-  cmp r1,r0
-  bcs @@migrate_pocket_next
-  ldr r0,[sp,8]
-  mov r1,r6
-  mov r2,r7
-  bl ${hex32(storageInsertAddress)}
-  mov r0,0
-  str r0,[r5]
-@@migrate_pocket_next:
-  add r4,1
-  b @@migrate_pocket_loop
-@@migrate_pocket_done:
-  ldr r0,[sp]
-  ldr r1,[sp,4]
-  bl ${hex32(pocketSortEmptyAddress)}
-  add sp,12
-  pop {r4,r5,r6,r7,pc}
-  .pool
-
-.org ${hex32(storageInsertAddress)}
-  push {r4,r5,r6,r7,lr}
-  mov r4,r0
-  mov r5,r1
-  mov r6,r2
+  .align 4
+  ldr r4,[pc,0]
+  b @@medicine_scratch_ptr_loaded
+  .word ${hex32(medicineScratchAddress)}
+@@medicine_scratch_ptr_loaded:
+  mov r0,r4
+  mov r1,0
+  mov r2,0xA0
+@@medicine_scratch_clear:
+  str r1,[r0]
+  add r0,4
+  sub r2,4
+  bne @@medicine_scratch_clear
+  bl ${hex32(storageHelperAddress)}
+  str r0,[sp,8]
   mov r7,0
-@@storage_insert_loop:
-  cmp r7,0x80
-  bcs @@storage_insert_done
-  lsl r0,r7,2
-  add r0,r4,r0
-  ldrh r1,[r0]
-  cmp r1,r5
-  beq @@storage_insert_add
-  cmp r1,0
-  beq @@storage_insert_empty
+  mov r5,0
+@@medicine_scan_overflow:
+  cmp r5,0x80
+  bcs @@medicine_copy_vanilla
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldrh r6,[r1]
+  cmp r6,0
+  beq @@medicine_next_overflow
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@medicine_next_overflow
+  mov r0,r6
+  bl ${hex32(itemIsTmHmAddress)}
+  cmp r0,0
+  bne @@medicine_next_overflow
+  ldr r0,=${hex32(pocketTableAddress)}
+  mov r1,r5
+  lsr r1,r1,1
+  ldrb r0,[r0,r1]
+  mov r1,1
+  tst r5,r1
+  beq @@medicine_low_nibble
+  lsr r0,r0,4
+@@medicine_low_nibble:
+  mov r1,0x0F
+  and r0,r1
+  cmp r0,1
+  bne @@medicine_next_overflow
+  cmp r7,0x28
+  bcs @@medicine_done
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldr r0,[r1]
+  lsl r2,r7,2
+  add r2,r4,r2
+  str r0,[r2]
   add r7,1
-  b @@storage_insert_loop
-@@storage_insert_empty:
-  strh r5,[r0]
-  strh r6,[r0,2]
-  b @@storage_insert_done
-@@storage_insert_add:
-  ldrh r1,[r0,2]
-  add r1,r1,r6
-  ldr r2,=0x0000FFFF
-  cmp r1,r2
-  bls @@storage_insert_store
-  mov r1,r2
-@@storage_insert_store:
-  strh r1,[r0,2]
-@@storage_insert_done:
+@@medicine_next_overflow:
+  add r5,1
+  b @@medicine_scan_overflow
+@@medicine_copy_vanilla:
+  ldr r0,[sp]
+  ldr r1,=0x0000051C
+  add r5,r0,r1
+  mov r6,0
+@@medicine_vanilla_loop:
+  cmp r7,0x28
+  bcs @@medicine_done
+  cmp r6,0x28
+  bcs @@medicine_done
+  lsl r1,r6,2
+  add r1,r5,r1
+  ldrh r0,[r1]
+  cmp r0,0
+  beq @@medicine_next_vanilla
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@medicine_next_vanilla
+  ldr r0,[r1]
+  lsl r2,r7,2
+  add r2,r4,r2
+  str r0,[r2]
+  add r7,1
+@@medicine_next_vanilla:
+  add r6,1
+  b @@medicine_vanilla_loop
+@@medicine_done:
+  mov r0,r4
+  add sp,16
   pop {r4,r5,r6,r7,pc}
   .pool
 
@@ -1408,13 +1403,957 @@ ${compatMaskWords}
   .halfword 0x0000
 ${tableRows}
 
+.org ${hex32(pocketTableAddress)}
+${pocketRows.join("\n")}
+
 .org ${hex32(tmhmScratchAddress)}
   .fill 0x00000280, 0xFD
+
+.org ${hex32(medicineScratchAddress)}
+  .fill 0x000000A0, 0xFD
+.close
+`;
+  }
+
+  function natureMintsHelper({
+    helperAddress,
+    entries,
+    genderRatioTable,
+    fallbackCheckAddress = 0,
+    fallbackDispatchAddress = 0,
+    pokemonGetValueAddress,
+    pokemonChangePersonalityAddress,
+    pokemonCalcStatsAddress,
+    partyGetPokemonBySlotIndexAddress,
+    partyMenuLoadMemberAddress,
+    partyMenuDrawMemberPanelAddress,
+    partyMenuLoadMemberWindowTilesAddress,
+    partyMenuDrawStatusAddress,
+    partyMenuPrintLongMessageAddress,
+    messageLoaderGetNewStringAddress,
+    stringTemplateFormatAddress,
+    stringTemplateSetNicknameAddress,
+    stringTemplateSetNatureNameAddress,
+    stringFreeAddress,
+    soundPlayEffectAddress,
+    divModAddress,
+    checkReturnAddress,
+    dispatchReturnAddress,
+    waitStateAddress,
+    appPartyMenuOffset,
+    partyMenuUsedItemOffset,
+    appCurrSlotOffset,
+    appStateOffset,
+    appMessageLoaderOffset,
+    appTemplateOffset,
+    appTmpStringOffset,
+    appPartyMemberStatusOffset,
+    partyMemberSize,
+    successMessageId,
+    soundEffectId,
+    monDataPersonality,
+    monDataSpecies,
+    monDataOtId,
+    monDataIsEgg,
+    monDataGender,
+    monDataSpeciesExists,
+    speciesUnown,
+    speciesWurmple,
+  }) {
+    const dispatchAddress = helperAddress + 0x80;
+    const stateAddress = helperAddress + 0x100;
+    const findMintAddress = helperAddress + 0x400;
+    const canUseAddress = helperAddress + 0x480;
+    const applyAddress = helperAddress + 0x540;
+    const helperFnsAddress = helperAddress + 0x940;
+    const tableAddress = helperAddress + 0xb00;
+    const genderRatioAddress = tableAddress + 0x80;
+    const rows = entries
+      .map(
+        (entry) =>
+          `  .halfword 0x${entry.itemId.toString(16).toUpperCase().padStart(4, "0")}, 0x${entry.natureIndex
+            .toString(16)
+            .toUpperCase()
+            .padStart(4, "0")}`
+      )
+      .join("\n");
+    const genderRatioBytes = Array.from(genderRatioTable || []);
+    const genderRatioRows = [];
+    for (let offset = 0; offset < genderRatioBytes.length; offset += 16) {
+      genderRatioRows.push(
+        `  .byte ${genderRatioBytes
+          .slice(offset, offset + 16)
+          .map((value) => `0x${value.toString(16).toUpperCase().padStart(2, "0")}`)
+          .join(", ")}`
+      );
+    }
+    const restoreCheckFrame = `  mov r0,r4
+  mov r1,r5
+  ldr r4,[sp]
+  ldr r5,[sp,4]
+  ldr r3,[sp,8]
+  add sp,12
+  mov lr,r3`;
+    const checkNoMatchCode = fallbackCheckAddress
+      ? `${restoreCheckFrame}
+  ldr r3,=${hex32(fallbackCheckAddress | 1)}
+  bx r3`
+      : `${restoreCheckFrame}
+  push {r3,r4,r5,r6,r7,lr}
+  sub sp,0x18
+  str r1,[sp,4]
+  mov r6,r0
+  ldr r3,=${hex32(checkReturnAddress)}
+  bx r3`;
+    const restoreDispatchFrame = `  mov r0,r4
+  ldr r4,[sp]
+  ldr r5,[sp,4]
+  ldr r3,[sp,8]
+  add sp,12
+  mov lr,r3`;
+    const dispatchNoMatchCode = fallbackDispatchAddress
+      ? `${restoreDispatchFrame}
+  ldr r3,=${hex32(fallbackDispatchAddress | 1)}
+  bx r3`
+      : `${restoreDispatchFrame}
+  push {r4,lr}
+  mov r4,r0
+  ldr r0,=${hex32(appPartyMenuOffset)}
+  ldr r0,[r4,r0]
+  ldr r3,=${hex32(dispatchReturnAddress)}
+  bx r3`;
+
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r0,r1
+  bl ${hex32(findMintAddress)}
+  cmp r0,0xFF
+  bne @@check_mint
+${checkNoMatchCode}
+@@check_mint:
+  mov r1,r0
+  mov r0,r4
+  bl ${hex32(canUseAddress)}
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(dispatchAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  ldr r1,=${hex32(appPartyMenuOffset)}
+  ldr r0,[r4,r1]
+  ldrh r0,[r0,${partyMenuUsedItemOffset}]
+  bl ${hex32(findMintAddress)}
+  cmp r0,0xFF
+  bne @@dispatch_mint
+${dispatchNoMatchCode}
+@@dispatch_mint:
+  ldr r1,=${hex32(appStateOffset)}
+  ldr r2,=${hex32(stateAddress | 1)}
+  str r2,[r4,r1]
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(stateAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,0x18
+  mov r4,r0
+  str r4,[sp,0]
+  ldr r1,=${hex32(appPartyMenuOffset)}
+  ldr r5,[r4,r1]
+  str r5,[sp,4]
+  ldrh r0,[r5,${partyMenuUsedItemOffset}]
+  bl ${hex32(findMintAddress)}
+  cmp r0,0xFF
+  beq @@state_finish
+  str r0,[sp,16]
+  ldr r1,=${hex32(appCurrSlotOffset)}
+  ldrb r6,[r4,r1]
+  str r6,[sp,12]
+  ldr r0,[r5]
+  mov r1,r6
+  bl ${hex32(partyGetPokemonBySlotIndexAddress)}
+  str r0,[sp,8]
+  ldr r1,[sp,16]
+  bl ${hex32(applyAddress)}
+  cmp r0,0xFF
+  beq @@state_finish
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuLoadMemberAddress)}
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuDrawMemberPanelAddress)}
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuLoadMemberWindowTilesAddress)}
+  ldr r1,[sp,12]
+  mov r2,${partyMemberSize}
+  mul r1,r2
+  ldr r2,=${hex32(appPartyMemberStatusOffset)}
+  add r1,r1,r2
+  ldr r2,[sp,0]
+  add r2,r2,r1
+  ldrh r2,[r2]
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuDrawStatusAddress)}
+  ldr r4,[sp,0]
+  ldr r0,=${hex32(appTemplateOffset)}
+  ldr r0,[r4,r0]
+  mov r1,0
+  ldr r2,[sp,8]
+  bl ${hex32(stringTemplateSetNicknameAddress)}
+  ldr r0,=${hex32(appTemplateOffset)}
+  ldr r0,[r4,r0]
+  mov r1,1
+  ldr r2,[sp,16]
+  bl ${hex32(stringTemplateSetNatureNameAddress)}
+  ldr r0,=${hex32(appMessageLoaderOffset)}
+  ldr r0,[r4,r0]
+  ldr r1,=${hex32(successMessageId)}
+  bl ${hex32(messageLoaderGetNewStringAddress)}
+  mov r7,r0
+  ldr r0,=${hex32(appTemplateOffset)}
+  ldr r0,[r4,r0]
+  ldr r1,=${hex32(appTmpStringOffset)}
+  ldr r1,[r4,r1]
+  mov r2,r7
+  bl ${hex32(stringTemplateFormatAddress)}
+  mov r0,r7
+  bl ${hex32(stringFreeAddress)}
+  ldr r0,[sp,0]
+  ldr r1,=0xFFFFFFFF
+  mov r2,1
+  bl ${hex32(partyMenuPrintLongMessageAddress)}
+  ldr r0,=${hex32(soundEffectId)}
+  bl ${hex32(soundPlayEffectAddress)}
+@@state_finish:
+  ldr r4,[sp,0]
+  ldr r0,=${hex32(appStateOffset)}
+  ldr r1,=${hex32(waitStateAddress | 1)}
+  str r1,[r4,r0]
+  mov r0,5
+  add sp,0x18
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(findMintAddress)}
+  push {r4,lr}
+  ldr r2,=${hex32(tableAddress)}
+  ldr r1,[r2]
+  add r2,4
+  mov r4,0
+@@find_loop:
+  cmp r4,r1
+  bcs @@find_none
+  lsl r3,r4,2
+  add r3,r2,r3
+  ldrh r3,[r3]
+  cmp r0,r3
+  beq @@find_hit
+  add r4,1
+  b @@find_loop
+@@find_hit:
+  lsl r3,r4,2
+  add r2,r2,r3
+  ldrh r0,[r2,2]
+  pop {r4,pc}
+@@find_none:
+  mov r0,0xFF
+  pop {r4,pc}
+  .pool
+
+.org ${hex32(canUseAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  mov r5,r1
+  ldr r1,=${hex32(monDataSpeciesExists)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,0
+  beq @@can_false
+  mov r0,r4
+  ldr r1,=${hex32(monDataIsEgg)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,0
+  bne @@can_false
+  mov r0,r4
+  ldr r1,=${hex32(monDataPersonality)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  mov r1,25
+  bl ${hex32(helperFnsAddress + 0x40)}
+  cmp r0,r5
+  beq @@can_false
+  mov r0,1
+  pop {r4,r5,pc}
+@@can_false:
+  mov r0,0
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(applyAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,0x30
+  mov r4,r0
+  mov r5,r1
+  str r4,[sp,0]
+  str r5,[sp,4]
+  ldr r1,=${hex32(monDataPersonality)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  mov r6,r0
+  str r6,[sp,8]
+  mov r1,25
+  bl ${hex32(helperFnsAddress + 0x40)}
+  cmp r0,r5
+  beq @@apply_fail
+  mov r7,r5
+  sub r7,r7,r0
+  bpl @@delta_ready
+  add r7,25
+@@delta_ready:
+  add r6,r6,r7
+  str r6,[sp,40]
+  mov r0,0
+  str r0,[sp,44]
+  ldr r0,[sp,0]
+  ldr r1,=${hex32(monDataSpecies)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  str r0,[sp,12]
+  ldr r0,[sp,0]
+  ldr r1,=${hex32(monDataOtId)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  str r0,[sp,16]
+  ldr r1,[sp,8]
+  bl ${hex32(helperFnsAddress)}
+  str r0,[sp,20]
+  ldr r0,[sp,0]
+  ldr r1,=${hex32(monDataGender)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  str r0,[sp,24]
+  ldr r0,[sp,8]
+  mov r1,1
+  and r0,r1
+  str r0,[sp,28]
+  ldr r6,[sp,40]
+  mov r0,r6
+  mov r1,1
+  and r0,r1
+  ldr r1,[sp,28]
+  cmp r0,r1
+  beq @@candidate_seed_ready
+  add r6,25
+  str r6,[sp,40]
+@@candidate_seed_ready:
+  ldr r0,[sp,12]
+  ldr r1,=${hex32(speciesUnown)}
+  cmp r0,r1
+  bne @@no_old_unown
+  ldr r0,[sp,8]
+  bl ${hex32(helperFnsAddress + 0x80)}
+  b @@store_old_unown
+@@no_old_unown:
+  mov r0,0xFF
+@@store_old_unown:
+  str r0,[sp,32]
+  ldr r0,[sp,12]
+  ldr r1,=${hex32(speciesWurmple)}
+  cmp r0,r1
+  bne @@no_old_wurmple
+  ldr r0,[sp,8]
+  bl ${hex32(helperFnsAddress + 0xc0)}
+  b @@store_old_wurmple
+@@no_old_wurmple:
+  mov r0,0xFF
+@@store_old_wurmple:
+  str r0,[sp,36]
+@@candidate_loop:
+  ldr r7,[sp,44]
+  ldr r0,[sp,20]
+  cmp r0,0
+  beq @@normal_limit
+  ldr r0,=0x00800000
+  b @@limit_ready
+@@normal_limit:
+  ldr r0,=0x00008000
+@@limit_ready:
+  cmp r7,r0
+  bcs @@apply_fail
+  ldr r6,[sp,40]
+  mov r0,r6
+  mov r1,1
+  and r0,r1
+  ldr r1,[sp,28]
+  cmp r0,r1
+  bne @@candidate_next
+  ldr r0,[sp,16]
+  mov r1,r6
+  bl ${hex32(helperFnsAddress)}
+  ldr r1,[sp,20]
+  cmp r0,r1
+  bne @@candidate_next
+  ldr r0,[sp,12]
+  mov r1,r6
+  bl ${hex32(helperFnsAddress + 0x100)}
+  ldr r1,[sp,24]
+  cmp r0,r1
+  bne @@candidate_next
+  ldr r1,[sp,32]
+  cmp r1,0xFF
+  beq @@check_wurmple
+  mov r0,r6
+  bl ${hex32(helperFnsAddress + 0x80)}
+  ldr r1,[sp,32]
+  cmp r0,r1
+  bne @@candidate_next
+@@check_wurmple:
+  ldr r1,[sp,36]
+  cmp r1,0xFF
+  beq @@candidate_found
+  mov r0,r6
+  bl ${hex32(helperFnsAddress + 0xc0)}
+  ldr r1,[sp,36]
+  cmp r0,r1
+  bne @@candidate_next
+@@candidate_found:
+  ldr r0,[sp,0]
+  mov r1,r6
+  bl ${hex32(pokemonChangePersonalityAddress)}
+  ldr r0,[sp,0]
+  bl ${hex32(pokemonCalcStatsAddress)}
+  ldr r0,[sp,4]
+  add sp,0x30
+  pop {r4,r5,r6,r7,pc}
+@@candidate_next:
+  ldr r6,[sp,40]
+  add r6,50
+  str r6,[sp,40]
+  ldr r7,[sp,44]
+  add r7,1
+  str r7,[sp,44]
+  b @@candidate_loop
+@@apply_fail:
+  mov r0,0xFF
+  add sp,0x30
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(helperFnsAddress)}
+  push {r2,r3,lr}
+  mov r2,r0
+  lsr r3,r2,16
+  eor r2,r3
+  mov r3,r1
+  lsr r0,r3,16
+  eor r3,r0
+  eor r2,r3
+  cmp r2,8
+  bcc @@shiny_true
+  mov r0,0
+  pop {r2,r3,pc}
+@@shiny_true:
+  mov r0,1
+  pop {r2,r3,pc}
+
+.org ${hex32(helperFnsAddress + 0x40)}
+  push {r3,lr}
+  ldr r3,=${hex32(divModAddress)}
+  blx r3
+  mov r0,r1
+  pop {r3,pc}
+  .pool
+
+.org ${hex32(helperFnsAddress + 0x80)}
+  push {r4,lr}
+  mov r4,r0
+  ldr r1,=0x03000000
+  and r1,r4
+  lsr r1,r1,18
+  ldr r2,=0x00030000
+  and r2,r4
+  lsr r2,r2,12
+  orr r1,r2
+  ldr r2,=0x00000300
+  and r2,r4
+  lsr r2,r2,6
+  orr r1,r2
+  mov r2,3
+  and r4,r2
+  orr r1,r4
+  mov r0,r1
+  mov r1,28
+  bl ${hex32(helperFnsAddress + 0x40)}
+  pop {r4,pc}
+  .pool
+
+.org ${hex32(helperFnsAddress + 0xc0)}
+  push {lr}
+  lsr r0,r0,16
+  mov r1,10
+  bl ${hex32(helperFnsAddress + 0x40)}
+  cmp r0,5
+  bcc @@wurmple_low
+  mov r0,1
+  pop {pc}
+@@wurmple_low:
+  mov r0,0
+  pop {pc}
+  .pool
+
+.org ${hex32(helperFnsAddress + 0x100)}
+  push {r4,lr}
+  mov r4,r1
+  ldr r1,=${genderRatioBytes.length}
+  cmp r0,r1
+  bcs @@gender_none
+  ldr r2,=${hex32(genderRatioAddress)}
+  add r2,r2,r0
+  ldrb r2,[r2]
+  cmp r2,0
+  beq @@gender_male
+  cmp r2,254
+  beq @@gender_female
+  cmp r2,255
+  beq @@gender_none
+  mov r0,0xFF
+  and r4,r0
+  cmp r2,r4
+  bhi @@gender_female
+@@gender_male:
+  mov r0,0
+  pop {r4,pc}
+@@gender_female:
+  mov r0,1
+  pop {r4,pc}
+@@gender_none:
+  mov r0,2
+  pop {r4,pc}
+  .pool
+
+.org ${hex32(tableAddress)}
+  .word ${hex32(entries.length)}
+${rows}
+
+.org ${hex32(genderRatioAddress)}
+${genderRatioRows.join("\n")}
+.close
+`;
+  }
+
+  function bottleCapsHelper({
+    helperAddress,
+    entries,
+    fallbackCheckAddress = 0,
+    fallbackDispatchAddress = 0,
+    pokemonGetValueAddress,
+    pokemonSetValueAddress,
+    pokemonCalcStatsAddress,
+    partyGetPokemonBySlotIndexAddress,
+    partyMenuLoadMemberAddress,
+    partyMenuDrawMemberPanelAddress,
+    partyMenuLoadMemberWindowTilesAddress,
+    partyMenuDrawStatusAddress,
+    partyMenuPrintLongMessageAddress,
+    messageLoaderGetNewStringAddress,
+    stringTemplateFormatAddress,
+    stringTemplateSetNicknameAddress,
+    stringFreeAddress,
+    soundPlayEffectAddress,
+    checkReturnAddress,
+    dispatchReturnAddress,
+    waitStateAddress,
+    appPartyMenuOffset,
+    partyMenuUsedItemOffset,
+    appCurrSlotOffset,
+    appStateOffset,
+    appMessageLoaderOffset,
+    appTemplateOffset,
+    appTmpStringOffset,
+    appPartyMemberStatusOffset,
+    partyMemberSize,
+    successMessageId,
+    soundEffectId,
+    monDataHpIv,
+    monDataIsEgg,
+    monDataSpeciesExists,
+  }) {
+    const dispatchAddress = helperAddress + 0x80;
+    const stateAddress = helperAddress + 0x100;
+    const findCapAddress = helperAddress + 0x360;
+    const canUseAddress = helperAddress + 0x3e0;
+    const applyAddress = helperAddress + 0x480;
+    const needsCapAddress = helperAddress + 0x5c0;
+    const setIvAddress = helperAddress + 0x660;
+    const tableAddress = helperAddress + 0x720;
+    const rows = entries
+      .map(
+        (entry) =>
+          `  .halfword 0x${entry.itemId.toString(16).toUpperCase().padStart(4, "0")}, 0x${entry.targetParam
+            .toString(16)
+            .toUpperCase()
+            .padStart(4, "0")}`
+      )
+      .join("\n");
+    const restoreCheckFrame = `  mov r0,r4
+  mov r1,r5
+  ldr r4,[sp]
+  ldr r5,[sp,4]
+  ldr r3,[sp,8]
+  add sp,12
+  mov lr,r3`;
+    const checkNoMatchCode = fallbackCheckAddress
+      ? `${restoreCheckFrame}
+  ldr r3,=${hex32(fallbackCheckAddress | 1)}
+  bx r3`
+      : `${restoreCheckFrame}
+  push {r3,r4,r5,r6,r7,lr}
+  sub sp,0x18
+  str r1,[sp,4]
+  mov r6,r0
+  ldr r3,=${hex32(checkReturnAddress)}
+  bx r3`;
+    const restoreDispatchFrame = `  mov r0,r4
+  ldr r4,[sp]
+  ldr r5,[sp,4]
+  ldr r3,[sp,8]
+  add sp,12
+  mov lr,r3`;
+    const dispatchNoMatchCode = fallbackDispatchAddress
+      ? `${restoreDispatchFrame}
+  ldr r3,=${hex32(fallbackDispatchAddress | 1)}
+  bx r3`
+      : `${restoreDispatchFrame}
+  push {r4,lr}
+  mov r4,r0
+  ldr r0,=${hex32(appPartyMenuOffset)}
+  ldr r0,[r4,r0]
+  ldr r3,=${hex32(dispatchReturnAddress)}
+  bx r3`;
+
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r0,r1
+  bl ${hex32(findCapAddress)}
+  cmp r0,0xFE
+  bne @@check_cap
+${checkNoMatchCode}
+@@check_cap:
+  mov r1,r0
+  mov r0,r4
+  bl ${hex32(canUseAddress)}
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(dispatchAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  ldr r1,=${hex32(appPartyMenuOffset)}
+  ldr r0,[r4,r1]
+  ldrh r0,[r0,${partyMenuUsedItemOffset}]
+  bl ${hex32(findCapAddress)}
+  cmp r0,0xFE
+  bne @@dispatch_cap
+${dispatchNoMatchCode}
+@@dispatch_cap:
+  ldr r1,=${hex32(appStateOffset)}
+  ldr r2,=${hex32(stateAddress | 1)}
+  str r2,[r4,r1]
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(stateAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,0x18
+  mov r4,r0
+  str r4,[sp,0]
+  ldr r1,=${hex32(appPartyMenuOffset)}
+  ldr r5,[r4,r1]
+  str r5,[sp,4]
+  ldrh r0,[r5,${partyMenuUsedItemOffset}]
+  bl ${hex32(findCapAddress)}
+  cmp r0,0xFE
+  beq @@state_finish
+  str r0,[sp,16]
+  ldr r1,=${hex32(appCurrSlotOffset)}
+  ldrb r6,[r4,r1]
+  str r6,[sp,12]
+  ldr r0,[r5]
+  mov r1,r6
+  bl ${hex32(partyGetPokemonBySlotIndexAddress)}
+  str r0,[sp,8]
+  ldr r1,[sp,16]
+  bl ${hex32(applyAddress)}
+  cmp r0,0xFF
+  beq @@state_finish
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuLoadMemberAddress)}
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuDrawMemberPanelAddress)}
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuLoadMemberWindowTilesAddress)}
+  ldr r1,[sp,12]
+  mov r2,${partyMemberSize}
+  mul r1,r2
+  ldr r2,=${hex32(appPartyMemberStatusOffset)}
+  add r1,r1,r2
+  ldr r2,[sp,0]
+  add r2,r2,r1
+  ldrh r2,[r2]
+  ldr r0,[sp,0]
+  ldr r1,[sp,12]
+  bl ${hex32(partyMenuDrawStatusAddress)}
+  ldr r4,[sp,0]
+  ldr r0,=${hex32(appTemplateOffset)}
+  ldr r0,[r4,r0]
+  mov r1,0
+  ldr r2,[sp,8]
+  bl ${hex32(stringTemplateSetNicknameAddress)}
+  ldr r0,=${hex32(appMessageLoaderOffset)}
+  ldr r0,[r4,r0]
+  ldr r1,[sp,16]
+  cmp r1,${monDataHpIv + 1}
+  beq @@message_atk
+  cmp r1,${monDataHpIv + 2}
+  beq @@message_def
+  cmp r1,${monDataHpIv + 4}
+  beq @@message_spa
+  cmp r1,${monDataHpIv + 5}
+  beq @@message_spdef
+  cmp r1,${monDataHpIv + 3}
+  beq @@message_spd
+  cmp r1,${monDataHpIv}
+  beq @@message_hp
+  ldr r1,=${hex32(successMessageId + 6)}
+  b @@message_ready
+@@message_atk:
+  ldr r1,=${hex32(successMessageId)}
+  b @@message_ready
+@@message_def:
+  ldr r1,=${hex32(successMessageId + 1)}
+  b @@message_ready
+@@message_spa:
+  ldr r1,=${hex32(successMessageId + 2)}
+  b @@message_ready
+@@message_spdef:
+  ldr r1,=${hex32(successMessageId + 3)}
+  b @@message_ready
+@@message_spd:
+  ldr r1,=${hex32(successMessageId + 4)}
+  b @@message_ready
+@@message_hp:
+  ldr r1,=${hex32(successMessageId + 5)}
+@@message_ready:
+  bl ${hex32(messageLoaderGetNewStringAddress)}
+  mov r7,r0
+  ldr r0,=${hex32(appTemplateOffset)}
+  ldr r0,[r4,r0]
+  ldr r1,=${hex32(appTmpStringOffset)}
+  ldr r1,[r4,r1]
+  mov r2,r7
+  bl ${hex32(stringTemplateFormatAddress)}
+  mov r0,r7
+  bl ${hex32(stringFreeAddress)}
+  ldr r0,[sp,0]
+  ldr r1,=0xFFFFFFFF
+  mov r2,1
+  bl ${hex32(partyMenuPrintLongMessageAddress)}
+  ldr r0,=${hex32(soundEffectId)}
+  bl ${hex32(soundPlayEffectAddress)}
+@@state_finish:
+  ldr r4,[sp,0]
+  ldr r0,=${hex32(appStateOffset)}
+  ldr r1,=${hex32(waitStateAddress | 1)}
+  str r1,[r4,r0]
+  mov r0,5
+  add sp,0x18
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(findCapAddress)}
+  push {r4,lr}
+  ldr r2,=${hex32(tableAddress)}
+  ldr r1,[r2]
+  add r2,4
+  mov r4,0
+@@find_loop:
+  cmp r4,r1
+  bcs @@find_none
+  lsl r3,r4,2
+  add r3,r2,r3
+  ldrh r3,[r3]
+  cmp r0,r3
+  beq @@find_hit
+  add r4,1
+  b @@find_loop
+@@find_hit:
+  lsl r3,r4,2
+  add r2,r2,r3
+  ldrh r0,[r2,2]
+  pop {r4,pc}
+@@find_none:
+  mov r0,0xFE
+  pop {r4,pc}
+  .pool
+
+.org ${hex32(canUseAddress)}
+  push {r4,r5,lr}
+  mov r4,r0
+  mov r5,r1
+  ldr r1,=${hex32(monDataSpeciesExists)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,0
+  beq @@can_false
+  mov r0,r4
+  ldr r1,=${hex32(monDataIsEgg)}
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,0
+  bne @@can_false
+  mov r0,r4
+  mov r1,r5
+  bl ${hex32(needsCapAddress)}
+  cmp r0,0
+  beq @@can_false
+  mov r0,1
+  pop {r4,r5,pc}
+@@can_false:
+  mov r0,0
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(applyAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,12
+  mov r4,r0
+  mov r5,r1
+  mov r0,r4
+  mov r1,r5
+  bl ${hex32(needsCapAddress)}
+  cmp r0,0
+  beq @@apply_fail
+  mov r7,0
+  cmp r5,0xFF
+  beq @@apply_all
+  mov r0,r4
+  mov r1,r5
+  bl ${hex32(setIvAddress)}
+  orr r7,r0
+  b @@apply_done
+@@apply_all:
+  mov r6,0
+@@apply_all_loop:
+  cmp r6,6
+  bcs @@apply_done
+  mov r0,r4
+  ldr r1,=${hex32(monDataHpIv)}
+  add r1,r6
+  bl ${hex32(setIvAddress)}
+  orr r7,r0
+  add r6,1
+  b @@apply_all_loop
+@@apply_done:
+  cmp r7,0
+  beq @@apply_fail
+  mov r0,r4
+  bl ${hex32(pokemonCalcStatsAddress)}
+  mov r0,0
+  add sp,12
+  pop {r4,r5,r6,r7,pc}
+@@apply_fail:
+  mov r0,0xFF
+  add sp,12
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(needsCapAddress)}
+  push {r4,r5,r6,lr}
+  mov r4,r0
+  mov r5,r1
+  cmp r5,0xFF
+  beq @@needs_all
+  mov r0,r4
+  mov r1,r5
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,31
+  bcc @@needs_true
+  mov r0,0
+  pop {r4,r5,r6,pc}
+@@needs_all:
+  mov r6,0
+@@needs_all_loop:
+  cmp r6,6
+  bcs @@needs_false
+  mov r0,r4
+  ldr r1,=${hex32(monDataHpIv)}
+  add r1,r6
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,31
+  bcc @@needs_true
+  add r6,1
+  b @@needs_all_loop
+@@needs_true:
+  mov r0,1
+  pop {r4,r5,r6,pc}
+@@needs_false:
+  mov r0,0
+  pop {r4,r5,r6,pc}
+  .pool
+
+.org ${hex32(setIvAddress)}
+  push {r4,r5,lr}
+  sub sp,4
+  mov r4,r0
+  mov r5,r1
+  mov r2,0
+  bl ${hex32(pokemonGetValueAddress)}
+  cmp r0,31
+  bcs @@set_skip
+  mov r0,31
+  str r0,[sp]
+  mov r0,r4
+  mov r1,r5
+  mov r2,sp
+  bl ${hex32(pokemonSetValueAddress)}
+  mov r0,1
+  add sp,4
+  pop {r4,r5,pc}
+@@set_skip:
+  mov r0,0
+  add sp,4
+  pop {r4,r5,pc}
+  .pool
+
+.org ${hex32(tableAddress)}
+  .word ${hex32(entries.length)}
+${rows}
 .close
 `;
   }
 
   return {
+    bottleCapsHelper,
     extraTmsHelper,
     infiniteCandyBagRemovalHelper,
     infiniteCandyChainHelper,
@@ -1427,6 +2366,7 @@ ${tableRows}
     modernFreezeHelper,
     modernParalysisThunderWaveHelper,
     modernSleepHelper,
+    natureMintsHelper,
     natureStatColorsHelper,
   };
 });

@@ -880,6 +880,12 @@ function initUi() {
     if (id === "extraTMs") {
       return `${PATCHES[id]} (${EXTRA_TM_COUNT} rows)`;
     }
+    if (id === "natureMints") {
+      return `${PATCHES[id]} (25 items)`;
+    }
+    if (id === "bottleCaps") {
+      return `${PATCHES[id]} (7 items)`;
+    }
     return PATCHES[id];
   }
 

@@ -192,6 +192,142 @@
 `;
   }
 
+  function frostbiteHelper({
+    helperAddress,
+    specialDamageAddress,
+    snowChanceProbabilisticAddress,
+    snowChanceIndirectAddress,
+    snowChanceScriptAddress,
+    originalBurnResidualAddress,
+    prepareSubscriptAddress,
+    frozenSubscriptId,
+  }) {
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {lr}
+  mov r0,r5
+  mov r1,0xC0
+  mul r0,r1
+  add r0,r4,r0
+  ldr r1,=${hex32(0x00002DAC)}
+  ldr r2,[r0,r1]
+  mov r3,0x10
+  tst r2,r3
+  beq @@try_frostbite
+  mov r2,26
+  b @@check_hp
+@@try_frostbite:
+  mov r3,0x20
+  tst r2,r3
+  beq @@return
+  mov r2,${frozenSubscriptId}
+@@check_hp:
+  ldr r1,=${hex32(0x00002D8C)}
+  ldr r1,[r0,r1]
+  cmp r1,0
+  beq @@return
+
+  ldr r1,=${hex32(0x00000118)}
+  str r5,[r4,r1]
+  mov r0,r4
+  mov r1,1
+  bl ${hex32(prepareSubscriptAddress)}
+  ldr r0,[r4,0x08]
+  str r0,[r4,0x0C]
+  mov r0,0x15
+  str r0,[r4,0x08]
+  mov r0,1
+  str r0,[sp,0x14]
+@@return:
+  pop {pc}
+  .pool
+
+.org ${hex32(specialDamageAddress)}
+  str r0,[sp,0x84]
+  ldr r1,[sp,0x48]
+  mov r2,0x20
+  tst r1,r2
+  beq @@load_damage_flags
+  cmp r7,0x3E
+  beq @@load_damage_flags
+  ldr r0,[sp,0x84]
+  lsr r1,r0,31
+  add r1,r0,r1
+  asr r0,r1,1
+  str r0,[sp,0x84]
+@@load_damage_flags:
+  ldr r0,[sp,0x0C]
+  bx lr
+
+.org ${hex32(snowChanceProbabilisticAddress)}
+  push {r0-r3,lr}
+  bl frostbite_should_double_freeze_chance
+  cmp r0,0
+  beq @@prob_done
+  lsl r6,r6,1
+  cmp r6,100
+  ble @@prob_done
+  mov r6,100
+@@prob_done:
+  pop {r0-r3,pc}
+
+.org ${hex32(snowChanceIndirectAddress)}
+  push {r0-r3,lr}
+  bl frostbite_should_double_freeze_chance
+  cmp r0,0
+  beq @@indirect_done
+  lsl r7,r7,1
+  cmp r7,100
+  ble @@indirect_done
+  mov r7,100
+@@indirect_done:
+  pop {r0-r3,pc}
+
+.org ${hex32(snowChanceScriptAddress)}
+  push {r0-r3,lr}
+  mov r0,r7
+  lsr r0,r0,31
+  cmp r0,0
+  beq @@script_done
+  lsl r7,r7,1
+  lsr r7,r7,1
+  bl frostbite_snow_active
+  cmp r0,0
+  beq @@script_done
+  lsl r4,r4,1
+  cmp r4,100
+  ble @@script_done
+  mov r4,100
+@@script_done:
+  pop {r0-r3,pc}
+
+frostbite_should_double_freeze_chance:
+  ldr r0,=${hex32(0x00002174)}
+  ldr r0,[r5,r0]
+  ldr r1,=${hex32(0x007FFFFF)}
+  and r0,r1
+  cmp r0,4
+  bne frostbite_no_double
+  b frostbite_snow_active
+
+frostbite_snow_active:
+  ldr r0,=${hex32(0x00000180)}
+  ldr r0,[r5,r0]
+  mov r1,0xC0
+  tst r0,r1
+  beq frostbite_no_double
+  mov r0,1
+  bx lr
+frostbite_no_double:
+  mov r0,0
+  bx lr
+  .pool
+.close
+`;
+  }
+
   function natureStatColorsHelper({
     helperAddress,
     pokemonGetStatAffinityOfAddress,
@@ -2416,6 +2552,7 @@ ${rows}
     itemRenewalWritebackHelper,
     modernBurnHelper,
     modernConfusionHelper,
+    frostbiteHelper,
     modernFreezeHelper,
     modernParalysisThunderWaveHelper,
     modernSleepHelper,

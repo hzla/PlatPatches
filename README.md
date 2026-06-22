@@ -217,6 +217,8 @@ Modern sleep also edits the battle script byte sequence for `subscript_fall_asle
 
 Modern burn also edits the battle script byte sequence for `subscript_burn_damage`, changing `DivideVarByValue BTLVAR_HP_CALC_TEMP, 8` to `DivideVarByValue BTLVAR_HP_CALC_TEMP, 16`. Observed divisor offsets are `0x008BEDC4` in pkaizo and `0x03961FBC` in clean US Platinum.
 
+Frostbite replaces Freeze's battle behavior while reusing the vanilla freeze status bit, icon, frozen animation, and normal cure/thaw paths. It rewrites `battle/skill/sub_seq.narc` member `28` (`subscript_frozen`) into Magic Guard-aware Frostbite residual damage, updates battle strings in `msgdata/pl_msg.narc` member `368`, skips the frozen action-block/random-thaw branch in overlay 16, hooks the end-of-turn residual status check, and adds a Special-damage hook in overlay 16. Frostbite cannot be combined with Modern Freeze. If Modern Burn is also active, Frostbite chip is `1/16` max HP; otherwise it is `1/8`. If Modern Snow is selected or already installed, freeze/Frostbite secondary chances are doubled under hail/snow while the flinch half of Freeze-or-Flinch remains unchanged.
+
 Modern paralysis also edits `battle/tr_ai/tr_ai_seq.narc` member `0`. The Basic AI Thunder Wave cannot-paralyze branch is redirected to an appended helper marked `modern_para_ai_v1`; that helper checks defender type 1 and type 2 for Electric before preserving the existing Motor Drive, Volt Absorb, status, and Safeguard checks.
 
 Fairy type research credit: Mikelan98 and BagBoy, "Fairy Type in Pokemon Platinum" (`pokehacking.com/r/20071800`).

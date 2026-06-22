@@ -26,6 +26,7 @@
     hex,
     bytesFromHex,
     bytesEqual,
+    writeU32,
     writeBytes,
     padBytes,
     requireBytes,
@@ -40,7 +41,9 @@
     replaceRomFile,
     replaceRomFileAllowGrowth,
     narcMemberBytes,
+    replaceMessageBankEntries,
     asciiBytes,
+    SyntheticOverlayAllocator,
   } = core;
 
   const BATTLE_SUB_SEQ_PATH = "battle/skill/sub_seq.narc";
@@ -58,6 +61,14 @@
     const first = 0xf000 | ((offset >> 12) & 0x7ff);
     const second = 0xf800 | ((offset >> 1) & 0x7ff);
     return [first & 0xff, first >> 8, second & 0xff, second >> 8];
+  }
+
+  function thumbBranch(fromAddress, toAddress) {
+    const offset = toAddress - (fromAddress + 4);
+    if (offset % 2 !== 0 || offset < -2048 || offset > 2046) {
+      throw new PatchError(`Cannot encode Thumb branch from ${hex(fromAddress)} to ${hex(toAddress)}.`);
+    }
+    return thumbInst16(0xe000 | ((offset >> 1) & 0x7ff));
   }
 
   function thumbCondBranch(fromAddress, toAddress, condition) {
@@ -1121,6 +1132,503 @@
     );
   }
 
+  const FROSTBITE_MARKER_TEXT = "FROSTBITEV1";
+  const FROSTBITE_MARKER = asciiBytes(`${FROSTBITE_MARKER_TEXT}\0\0\0\0\0`);
+  const FROSTBITE_FREEZE_ACTION_REL = 0x137d6;
+  const FROSTBITE_FREEZE_ACTION_ORIGINAL = bytesFromHex(`
+    61 6e c0 20 48 43 21 18 69 48 09 58 20 20 08 42 25 d0
+  `);
+  const FROSTBITE_FREEZE_ACTION_PATCHED = bytesFromHex(`
+    61 6e c0 20 48 43 21 18 69 48 09 58 20 20 08 42 25 e0
+  `);
+  const FROSTBITE_LEGACY_RESIDUAL_CALL_REL = 0x146c2;
+  const FROSTBITE_BURN_CASE_REL = 0x1216c;
+  const FROSTBITE_BURN_CASE_CONTINUE_REL = 0x121a0;
+  const FROSTBITE_BURN_CASE_ORIGINAL = bytesFromHex("c0 20 29 1c 41 43");
+  const FROSTBITE_SPECIAL_DAMAGE_REL = 0x1fbf0;
+  const FROSTBITE_SPECIAL_DAMAGE_ORIGINAL = bytesFromHex("21 90 03 98 02 21 08 42 25 d0");
+  const FROSTBITE_SNOW_PROBABILISTIC_CHANCE_REL = 0x186da;
+  const FROSTBITE_SNOW_PROBABILISTIC_CHANCE_ORIGINAL = bytesFromHex("00 2e 01 d1 cf f5 a9 f8");
+  const FROSTBITE_SNOW_INDIRECT_CHANCE_REL = 0x18764;
+  const FROSTBITE_SNOW_INDIRECT_CHANCE_ORIGINAL = bytesFromHex("00 2f 01 d1 cf f5 64 f8");
+  const FROSTBITE_SCRIPT_CHANCE_REL = 0xcd0e;
+  const FROSTBITE_SCRIPT_CHANCE_ORIGINAL = bytesFromHex("00 2c 01 d1 da f5 8f fd");
+  const FROSTBITE_FREEZE_OR_FLINCH_MEMBER = 249;
+  const FROSTBITE_FREEZE_OR_FLINCH_ORIGINAL = bytesFromHex(`
+    b5 00 00 00 02 00 00 00 3c 00 00 00 1f 00 00 00
+    b5 00 00 00 02 00 00 00 3c 00 00 00 0e 00 00 00
+    de 00 00 00
+  `);
+  const FROSTBITE_FREEZE_OR_FLINCH_PATCHED = bytesFromHex(`
+    b5 00 00 00 02 00 00 80 3c 00 00 00 1f 00 00 00
+    b5 00 00 00 02 00 00 00 3c 00 00 00 0e 00 00 00
+    de 00 00 00
+  `);
+  const FROSTBITE_MODERN_SNOW_HAIL_CHIP_REL = 0xa1ec;
+  const FROSTBITE_MODERN_SNOW_HAIL_CHIP_PATCHED = bytesFromHex(`
+    51 28 0e e0 43 49 08 1c 22 30 29 50 40 48 a9 19
+    09 58 00 20 c0 43 48 43 10 21
+  `);
+  const FROSTBITE_BURN_RESIDUAL_RAM = 0x0224ee88;
+  const FROSTBITE_PREPARE_SUBSCRIPT_RAM = 0x02251e1c;
+  const FROSTBITE_FROZEN_SUBSCRIPT_ID = 28;
+  const FROSTBITE_SUBSCRIPT_MEMBER = 28;
+  const FROSTBITE_BATTLE_STRINGS_MEMBER = 368;
+  const FROSTBITE_SPECIAL_DAMAGE_HELPER_OFFSET = 0x100;
+  const FROSTBITE_SNOW_PROBABILISTIC_HELPER_OFFSET = 0x160;
+  const FROSTBITE_SNOW_INDIRECT_HELPER_OFFSET = 0x1b0;
+  const FROSTBITE_SNOW_SCRIPT_HELPER_OFFSET = 0x200;
+  const BATTLE_ANIMATION_FROZEN = 4;
+  const BATTLE_STRING_POKEMON_IS_HURT_BY_FROSTBITE = 111;
+  const FROSTBITE_BURN_SCRIPT_DIVISOR_ORIGINAL = bytesFromHex("55 00 00 00 20 00 00 00 08 00 00 00");
+  const FROSTBITE_BURN_SCRIPT_DIVISOR_MODERN = bytesFromHex("55 00 00 00 20 00 00 00 10 00 00 00");
+  const FROSTBITE_HEATPROOF_DIVISOR = bytesFromHex("55 00 00 00 20 00 00 00 02 00 00 00");
+  const FROSTBITE_PRINT_BURN_MESSAGE = bytesFromHex("12 00 00 00 5f 00 00 00 02 00 00 00 ff 00 00 00");
+  const FROSTBITE_PLAY_BURN_ANIMATION = bytesFromHex("45 00 00 00 ff 00 00 00 03 00 00 00");
+
+  function writeScriptWord(data, offset, value) {
+    writeU32(data, offset, value >>> 0);
+  }
+
+  function replaceOneScriptOperand(data, original, label, patchOffset, value) {
+    const hits = findNeedle(data, original, 0, data.length);
+    if (hits.length !== 1) {
+      throw new PatchError(`${label} matched ${hits.length} locations while building Frostbite residual script.`);
+    }
+    writeScriptWord(data, hits[0] + patchOffset, value);
+    return hits[0];
+  }
+
+  function isModernBurnDamageActive(rom) {
+    const file = findFileByPath(rom, BATTLE_SUB_SEQ_PATH);
+    const member = rom.slice(file.start, file.end);
+    const patched = findNeedle(member, MODERN_BURN_DAMAGE_PATCHED, 0, member.length);
+    if (patched.length > 1) {
+      throw new PatchError(
+        `Frostbite Modern Burn detector matched multiple patched burn residual scripts: ${patched
+          .map((offset) => `${hex(file.start + offset)}`)
+          .join(", ")}.`
+      );
+    }
+    return patched.length === 1;
+  }
+
+  function buildFrostbiteSubscript(burnSubscript, divisor) {
+    const script = new Uint8Array(burnSubscript);
+    const firstDivisor =
+      divisor === 16 ? FROSTBITE_BURN_SCRIPT_DIVISOR_ORIGINAL : FROSTBITE_BURN_SCRIPT_DIVISOR_MODERN;
+    const firstFallback =
+      divisor === 16 ? FROSTBITE_BURN_SCRIPT_DIVISOR_MODERN : FROSTBITE_BURN_SCRIPT_DIVISOR_ORIGINAL;
+    let firstHits = findNeedle(script, firstDivisor, 0, script.length);
+    if (firstHits.length !== 1) {
+      firstHits = findNeedle(script, firstFallback, 0, script.length);
+    }
+    if (firstHits.length !== 1) {
+      throw new PatchError("Frostbite could not identify the residual-damage divisor in subscript_burn_damage.");
+    }
+    writeScriptWord(script, firstHits[0] + 8, divisor);
+
+    replaceOneScriptOperand(
+      script,
+      FROSTBITE_HEATPROOF_DIVISOR,
+      "Frostbite Heatproof divisor",
+      8,
+      1
+    );
+    replaceOneScriptOperand(
+      script,
+      FROSTBITE_PRINT_BURN_MESSAGE,
+      "Frostbite residual message",
+      4,
+      BATTLE_STRING_POKEMON_IS_HURT_BY_FROSTBITE
+    );
+    replaceOneScriptOperand(
+      script,
+      FROSTBITE_PLAY_BURN_ANIMATION,
+      "Frostbite residual animation",
+      8,
+      BATTLE_ANIMATION_FROZEN
+    );
+    return script;
+  }
+
+  async function buildFrostbitePayload(payloadAddress) {
+    const helperAddress = payloadAddress + FROSTBITE_MARKER.length;
+    const specialDamageAddress = helperAddress + FROSTBITE_SPECIAL_DAMAGE_HELPER_OFFSET;
+    const snowChanceProbabilisticAddress = helperAddress + FROSTBITE_SNOW_PROBABILISTIC_HELPER_OFFSET;
+    const snowChanceIndirectAddress = helperAddress + FROSTBITE_SNOW_INDIRECT_HELPER_OFFSET;
+    const snowChanceScriptAddress = helperAddress + FROSTBITE_SNOW_SCRIPT_HELPER_OFFSET;
+    const helper = await assembleModernStatusHelper(
+      "Frostbite",
+      asmTemplates.frostbiteHelper({
+        helperAddress,
+        specialDamageAddress,
+        snowChanceProbabilisticAddress,
+        snowChanceIndirectAddress,
+        snowChanceScriptAddress,
+        originalBurnResidualAddress: FROSTBITE_BURN_RESIDUAL_RAM,
+        prepareSubscriptAddress: FROSTBITE_PREPARE_SUBSCRIPT_RAM,
+        frozenSubscriptId: FROSTBITE_FROZEN_SUBSCRIPT_ID,
+      })
+    );
+    const bytes = new Uint8Array(FROSTBITE_MARKER.length + helper.length);
+    bytes.set(FROSTBITE_MARKER);
+    bytes.set(helper, FROSTBITE_MARKER.length);
+    return {
+      bytes,
+      residualAddress: helperAddress,
+      specialDamageAddress,
+      snowChanceProbabilisticAddress,
+      snowChanceIndirectAddress,
+      snowChanceScriptAddress,
+    };
+  }
+
+  function frostbiteBurnCaseHook(fromAddress, continueAddress, helperAddress) {
+    const context = new Uint8Array(6);
+    context.set(thumbBl(fromAddress, helperAddress), 0);
+    context.set(thumbBranch(fromAddress + 4, continueAddress), 4);
+    return context;
+  }
+
+  function frostbiteSpecialDamageContext(fromAddress, helperAddress) {
+    const context = new Uint8Array(FROSTBITE_SPECIAL_DAMAGE_ORIGINAL);
+    context.set(thumbBl(fromAddress, helperAddress), 0);
+    return context;
+  }
+
+  function frostbiteChanceContext(originalBytes, fromAddress, helperAddress) {
+    const context = new Uint8Array(originalBytes);
+    context.set(thumbBl(fromAddress, helperAddress), 0);
+    context[4] = 0x00;
+    context[5] = 0xe0;
+    context[6] = 0xc0;
+    context[7] = 0x46;
+    return context;
+  }
+
+  function isModernSnowActive(rom, overlay) {
+    const preferred = overlay.start + FROSTBITE_MODERN_SNOW_HAIL_CHIP_REL;
+    if (bytesEqual(rom, preferred, FROSTBITE_MODERN_SNOW_HAIL_CHIP_PATCHED)) {
+      return true;
+    }
+    const overlayBytes = rom.slice(overlay.start, overlay.end);
+    const hits = findNeedle(
+      overlayBytes,
+      FROSTBITE_MODERN_SNOW_HAIL_CHIP_PATCHED,
+      0,
+      overlayBytes.length
+    );
+    if (hits.length > 1) {
+      throw new PatchError(
+        `Frostbite Modern Snow detector matched multiple hail chip edits: ${hits
+          .map((offset) => `overlay 16+${hex(offset)}`)
+          .join(", ")}.`
+      );
+    }
+    return hits.length === 1;
+  }
+
+  function patchFrostbiteFreezeOrFlinchSubscript(rom, force, log) {
+    const file = findFileByPath(rom, BATTLE_SUB_SEQ_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const member = narcMemberBytes(narc, FROSTBITE_FREEZE_OR_FLINCH_MEMBER);
+
+    if (bytesEqual(member, 0, FROSTBITE_FREEZE_OR_FLINCH_PATCHED)) {
+      return { rom, already: true };
+    }
+    if (!force && !bytesEqual(member, 0, FROSTBITE_FREEZE_OR_FLINCH_ORIGINAL)) {
+      throw new PatchError(
+        "Frostbite snow integration expected vanilla subscript_freeze_or_flinch. Enable compatible modified bytes to patch anyway."
+      );
+    }
+
+    const patchedNarc = replaceNarcMembers(narc, [
+      [FROSTBITE_FREEZE_OR_FLINCH_MEMBER, FROSTBITE_FREEZE_OR_FLINCH_PATCHED],
+    ]);
+    const result = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Frostbite freeze-or-flinch snow marker");
+    log.push(
+      `Frostbite snow integration: marked the freeze half of subscript_freeze_or_flinch${
+        result.growth ? `; ROM grew by ${result.growth} byte(s)` : ""
+      }.`
+    );
+    return { rom: result.rom, already: false };
+  }
+
+  function patchFrostbiteSnowChanceIntegration(rom, force, log, overlay, built) {
+    const markerResult = patchFrostbiteFreezeOrFlinchSubscript(rom, force, log);
+    rom = markerResult.rom;
+
+    const probabilisticAt = overlay.start + FROSTBITE_SNOW_PROBABILISTIC_CHANCE_REL;
+    const probabilisticRam = overlay.loadAddress + FROSTBITE_SNOW_PROBABILISTIC_CHANCE_REL;
+    const probabilisticPatched = frostbiteChanceContext(
+      FROSTBITE_SNOW_PROBABILISTIC_CHANCE_ORIGINAL,
+      probabilisticRam,
+      built.snowChanceProbabilisticAddress
+    );
+    const probabilisticState = requireBytes(
+      rom,
+      probabilisticAt,
+      FROSTBITE_SNOW_PROBABILISTIC_CHANCE_ORIGINAL,
+      probabilisticPatched,
+      force,
+      "Frostbite snow probabilistic chance hook"
+    );
+
+    const indirectAt = overlay.start + FROSTBITE_SNOW_INDIRECT_CHANCE_REL;
+    const indirectRam = overlay.loadAddress + FROSTBITE_SNOW_INDIRECT_CHANCE_REL;
+    const indirectPatched = frostbiteChanceContext(
+      FROSTBITE_SNOW_INDIRECT_CHANCE_ORIGINAL,
+      indirectRam,
+      built.snowChanceIndirectAddress
+    );
+    const indirectState = requireBytes(
+      rom,
+      indirectAt,
+      FROSTBITE_SNOW_INDIRECT_CHANCE_ORIGINAL,
+      indirectPatched,
+      force,
+      "Frostbite snow indirect chance hook"
+    );
+
+    const scriptAt = overlay.start + FROSTBITE_SCRIPT_CHANCE_REL;
+    const scriptRam = overlay.loadAddress + FROSTBITE_SCRIPT_CHANCE_REL;
+    const scriptPatched = frostbiteChanceContext(
+      FROSTBITE_SCRIPT_CHANCE_ORIGINAL,
+      scriptRam,
+      built.snowChanceScriptAddress
+    );
+    const scriptState = requireBytes(
+      rom,
+      scriptAt,
+      FROSTBITE_SCRIPT_CHANCE_ORIGINAL,
+      scriptPatched,
+      force,
+      "Frostbite snow script chance hook"
+    );
+
+    if (probabilisticState !== "already") {
+      writeBytes(rom, probabilisticAt, probabilisticPatched);
+    }
+    if (indirectState !== "already") {
+      writeBytes(rom, indirectAt, indirectPatched);
+    }
+    if (scriptState !== "already") {
+      writeBytes(rom, scriptAt, scriptPatched);
+    }
+
+    if (
+      markerResult.already &&
+      probabilisticState === "already" &&
+      indirectState === "already" &&
+      scriptState === "already"
+    ) {
+      log.push("Frostbite snow integration: already patched.");
+      return rom;
+    }
+
+    log.push(
+      `Frostbite snow integration: doubled freeze/Frostbite chance under hail/snow at overlay 16+${hex(
+        probabilisticAt - overlay.start
+      )}, overlay 16+${hex(indirectAt - overlay.start)}, and overlay 16+${hex(scriptAt - overlay.start)}.`
+    );
+    return rom;
+  }
+
+  function patchFrostbiteBattleText(rom, log) {
+    const file = findFileByPath(rom, "msgdata/pl_msg.narc");
+    const narc = rom.slice(file.start, file.end);
+    const bank = narcMemberBytes(narc, FROSTBITE_BATTLE_STRINGS_MEMBER);
+    const patchedBank = replaceMessageBankEntries(
+      bank,
+      [
+        [101, "{STRVAR_1 1, 0, 0} was\nfrostbitten!"],
+        [102, "The wild {STRVAR_1 1, 0, 0} was\nfrostbitten!"],
+        [103, "The foe's {STRVAR_1 1, 0, 0} was\nfrostbitten!"],
+        [111, "{STRVAR_1 1, 0, 0} is hurt\nby its frostbite!"],
+        [112, "The wild {STRVAR_1 1, 0, 0} is hurt\nby its frostbite!"],
+        [113, "The foe's {STRVAR_1 1, 0, 0} is hurt\nby its frostbite!"],
+      ],
+      { label: "Frostbite battle text" }
+    );
+    if (bytesEqual(bank, 0, patchedBank)) {
+      log.push("Frostbite battle text: already patched.");
+      return rom;
+    }
+    const patchedNarc = replaceNarcMembers(narc, [[FROSTBITE_BATTLE_STRINGS_MEMBER, patchedBank]]);
+    const result = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Frostbite battle text");
+    log.push(
+      `Frostbite battle text: patched msgdata/pl_msg.narc member ${FROSTBITE_BATTLE_STRINGS_MEMBER} entries 101-103 and 111-113${
+        result.growth ? `; ROM grew by ${result.growth} byte(s)` : ""
+      }.`
+    );
+    return result.rom;
+  }
+
+  function patchFrostbiteSubscript(rom, force, divisor, log) {
+    const file = findFileByPath(rom, BATTLE_SUB_SEQ_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const burnSubscript = narcMemberBytes(narc, 26);
+    const frozenSubscript = narcMemberBytes(narc, FROSTBITE_SUBSCRIPT_MEMBER);
+    const patchedSubscript = buildFrostbiteSubscript(burnSubscript, divisor);
+
+    if (bytesEqual(frozenSubscript, 0, patchedSubscript)) {
+      log.push(`Frostbite residual script: already patched at 1/${divisor} max HP.`);
+      return rom;
+    }
+    const vanillaFrozen = bytesFromHex(`
+      12 00 00 00 6f 00 00 00 02 00 00 00 01 00 00 00
+      0e 00 00 00 1e 00 00 00 1e 00 00 00 45 00 00 00
+      01 00 00 00 04 00 00 00 0e 00 00 00 de 00 00 00
+    `);
+    if (!force && !bytesEqual(frozenSubscript, 0, vanillaFrozen)) {
+      throw new PatchError(
+        "Frostbite residual script expected vanilla subscript_frozen. Enable compatible modified bytes to patch anyway."
+      );
+    }
+    const patchedNarc = replaceNarcMembers(narc, [[FROSTBITE_SUBSCRIPT_MEMBER, patchedSubscript]]);
+    const result = replaceRomFileAllowGrowth(rom, file, patchedNarc, "Frostbite residual script");
+    log.push(
+      `Frostbite residual script: replaced subscript_frozen with Magic Guard-aware 1/${divisor} max-HP chip${
+        result.growth ? `; ROM grew by ${result.growth} byte(s)` : ""
+      }.`
+    );
+    return result.rom;
+  }
+
+  async function patchFrostbite(rom, force, log, options = {}) {
+    if (options && options._selectedPatchIds && options._selectedPatchIds.includes("modernFreeze")) {
+      throw new PatchError("Frostbite replaces freeze behavior and cannot be combined with Modern Freeze.");
+    }
+    const overlay = getOverlayRange(rom, OVERLAY_16);
+    if (isModernFreezeHookActive(rom, overlay)) {
+      throw new PatchError("Frostbite cannot be applied to a ROM that already has Modern Freeze installed.");
+    }
+
+    const modernBurnActive =
+      Boolean(options && options._selectedPatchIds && options._selectedPatchIds.includes("modernBurn")) ||
+      isModernBurnDamageActive(rom);
+    const modernSnowActive =
+      Boolean(options && options._selectedPatchIds && options._selectedPatchIds.includes("modernSnow")) ||
+      isModernSnowActive(rom, overlay);
+    const divisor = modernBurnActive ? 16 : 8;
+    rom = patchFrostbiteSubscript(rom, force, divisor, log);
+    rom = patchFrostbiteBattleText(rom, log);
+
+    const allocator = new SyntheticOverlayAllocator(rom, log);
+    const allocation = await allocator.allocateAsync({
+      marker: FROSTBITE_MARKER_TEXT,
+      buildPayload: buildFrostbitePayload,
+      label: "Frostbite",
+      alignment: 0x10,
+      updateExisting: true,
+    });
+
+    const actionLocated = locateNearby(
+      rom,
+      overlay.start + FROSTBITE_FREEZE_ACTION_REL,
+      FROSTBITE_FREEZE_ACTION_ORIGINAL,
+      FROSTBITE_FREEZE_ACTION_PATCHED,
+      0x100,
+      "Frostbite action gate"
+    );
+    const actionState = requireBytes(
+      rom,
+      actionLocated.offset,
+      FROSTBITE_FREEZE_ACTION_ORIGINAL,
+      FROSTBITE_FREEZE_ACTION_PATCHED,
+      force,
+      "Frostbite action gate"
+    );
+
+    const legacyResidualAt = overlay.start + FROSTBITE_LEGACY_RESIDUAL_CALL_REL;
+    const legacyResidualRam = overlay.loadAddress + FROSTBITE_LEGACY_RESIDUAL_CALL_REL;
+    const legacyResidualOriginal = new Uint8Array(thumbBl(legacyResidualRam, FROSTBITE_BURN_RESIDUAL_RAM));
+    const legacyResidualPatched = new Uint8Array(thumbBl(legacyResidualRam, allocation.built.residualAddress));
+    let legacyResidualState = "clean";
+    if (bytesEqual(rom, legacyResidualAt, legacyResidualPatched)) {
+      writeBytes(rom, legacyResidualAt, legacyResidualOriginal);
+      legacyResidualState = "restored";
+    } else if (!bytesEqual(rom, legacyResidualAt, legacyResidualOriginal) && !force) {
+      throw new PatchError("Frostbite legacy residual hook site is not in a recognized state.");
+    }
+
+    const residualAt = overlay.start + FROSTBITE_BURN_CASE_REL;
+    const residualRam = overlay.loadAddress + FROSTBITE_BURN_CASE_REL;
+    const residualContinueRam = overlay.loadAddress + FROSTBITE_BURN_CASE_CONTINUE_REL;
+    const residualPatched = frostbiteBurnCaseHook(residualRam, residualContinueRam, allocation.built.residualAddress);
+    const residualState = requireBytes(
+      rom,
+      residualAt,
+      FROSTBITE_BURN_CASE_ORIGINAL,
+      residualPatched,
+      force,
+      "Frostbite turn-end residual hook"
+    );
+
+    const specialAt = overlay.start + FROSTBITE_SPECIAL_DAMAGE_REL;
+    const specialRam = overlay.loadAddress + FROSTBITE_SPECIAL_DAMAGE_REL;
+    const specialPatched = frostbiteSpecialDamageContext(specialRam, allocation.built.specialDamageAddress);
+    const specialState = requireBytes(
+      rom,
+      specialAt,
+      FROSTBITE_SPECIAL_DAMAGE_ORIGINAL,
+      specialPatched,
+      force,
+      "Frostbite Special damage hook"
+    );
+
+    if (actionState !== "already") {
+      writeBytes(rom, actionLocated.offset, FROSTBITE_FREEZE_ACTION_PATCHED);
+    }
+    if (residualState !== "already") {
+      writeBytes(rom, residualAt, residualPatched);
+    }
+    if (specialState !== "already") {
+      writeBytes(rom, specialAt, specialPatched);
+    }
+    if (modernSnowActive) {
+      rom = patchFrostbiteSnowChanceIntegration(rom, force, log, overlay, allocation.built);
+    }
+
+    if (
+      actionState === "already" &&
+      residualState === "already" &&
+      specialState === "already" &&
+      legacyResidualState !== "restored" &&
+      !modernSnowActive &&
+      allocation.reused
+    ) {
+      log.push("Frostbite: already patched.");
+      return;
+    }
+    const notes = [];
+    if (actionLocated.usedFallback) {
+      notes.push("action fallback scan");
+    }
+    if (legacyResidualState === "restored") {
+      notes.push("restored old move-check hook");
+    }
+    if (modernBurnActive) {
+      notes.push("Modern Burn chip divisor");
+    }
+    if (modernSnowActive) {
+      notes.push("Modern Snow freeze chance integration");
+    }
+    log.push(
+      `Frostbite: freeze action blocking skipped at overlay 16+${hex(
+        actionLocated.offset - overlay.start + 0x10
+      )}; residual check hook at overlay 16+${hex(
+        residualAt - overlay.start
+      )}; Special damage hook at overlay 16+${hex(
+        specialAt - overlay.start
+      )}; helper at synthetic-overlay RAM ${hex(allocation.built.residualAddress)}${
+        notes.length ? ` (${notes.join(", ")})` : ""
+      }.`
+    );
+    return rom;
+  }
+
   const MODERN_CONFUSION_HOOK_REL = 0x13a7e;
   const MODERN_CONFUSION_HOOK_ORIGINAL = bytesFromHex(`
     06 98 f0 f7 7c fc 01 21 08 42 09 d0
@@ -1233,6 +1741,7 @@
     modernBurn: patchModernBurn,
     modernSleep: patchModernSleep,
     modernFreeze: patchModernFreeze,
+    frostbite: patchFrostbite,
     modernConfusion: patchModernConfusion,
   };
 });

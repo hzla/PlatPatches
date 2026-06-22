@@ -293,6 +293,7 @@
     modernBurn: "Modern burn",
     modernSleep: "Modern sleep",
     modernFreeze: "Modern freeze",
+    frostbite: "Frostbite",
     modernConfusion: "Modern confusion",
     universalInfatuation: "Universal infatuation",
     modernSnow: "Modern snow",
@@ -494,6 +495,21 @@
         "Overlay 16 freeze thaw-roll hook: +0x13B48-0x13B59.",
         "ARM9 helper: RAM 0x020F3300-0x020F3333 / ROM 0x000F7300-0x000F7333 preferred; can fallback to another nearby zero-filled cave.",
         "The helper uses BattleMon padding007A as a temporary per-battler freeze-turn counter. It is battle-local padding, not save data.",
+      ],
+    },
+    frostbite: {
+      title: "Frostbite",
+      summary:
+        "Replaces Freeze's battle behavior with Frostbite while keeping the vanilla freeze status bit, icon, frozen animation, Ice Heal/Full Heal cures, and Fire-type thaw paths.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker FROSTBITEV1.",
+        "Battle script: battle/skill/sub_seq.narc member 28 replaces subscript_frozen with Magic Guard-aware Frostbite residual damage using the frozen animation.",
+        "Battle text: msgdata/pl_msg.narc member 368 entries 101-103 say the Pokemon was frostbitten; entries 111-113 say it is hurt by its frostbite.",
+        "Overlay 16 action gate: +0x137E6 changes the frozen-action block to skip random thaw/action prevention.",
+        "Overlay 16 end-of-turn status hook: +0x146C2 routes the burn residual check through the Frostbite helper so freeze/Frostbite also runs residual damage.",
+        "Overlay 16 Special damage hook: +0x1FBF0 halves Frostbitten attackers' Special damage unless they have Guts.",
+        "Modern Snow integration: if Modern Snow is selected or already present, freeze/Frostbite secondary chances are doubled under hail/snow while Freeze-or-Flinch keeps its flinch chance unchanged.",
+        "If Modern Burn is also active, Frostbite chip is 1/16 max HP; otherwise it is 1/8 max HP. Frostbite cannot be combined with Modern Freeze.",
       ],
     },
     modernConfusion: {
@@ -1156,6 +1172,7 @@
     { id: "modernBurn", apply: modernStatusPatches.modernBurn },
     { id: "modernSleep", apply: modernStatusPatches.modernSleep },
     { id: "modernFreeze", apply: modernStatusPatches.modernFreeze },
+    { id: "frostbite", apply: modernStatusPatches.frostbite },
     { id: "modernConfusion", apply: modernStatusPatches.modernConfusion },
     { id: "universalInfatuation", apply: modernStatusPatches.universalInfatuation },
     { id: "modernSnow", apply: weatherPatches.modernSnow },
@@ -1224,6 +1241,12 @@
     if (selected.has("bottleCaps")) {
       selected.add("itemExpansion");
     }
+    if (selected.has("modernSnow") && !selected.has("frostbite") && romHasAsciiMarker(rom, "FROSTBITEV1")) {
+      selected.add("frostbite");
+    }
+    if (selected.has("frostbite") && selected.has("modernFreeze")) {
+      throw new PatchError("Frostbite replaces Freeze behavior and cannot be combined with Modern Freeze.");
+    }
     if (
       selected.has("infiniteContinuousCandy") ||
       selected.has("itemRenewal") ||
@@ -1233,7 +1256,8 @@
       selected.has("itemExpansion") ||
       selected.has("extraTMs") ||
       selected.has("natureMints") ||
-      selected.has("bottleCaps")
+      selected.has("bottleCaps") ||
+      selected.has("frostbite")
     ) {
       selected.add("arm9Expansion");
     }
@@ -1243,6 +1267,7 @@
     if (debugFairyBattleTest) {
       selected.add("fairyPokemonTypes");
     }
+    effectiveOptions._selectedPatchIds = Array.from(selected);
     const effectivePatchIds = Array.from(selected);
     const orderedPatchIds = [
       ...(selected.has("arm9Expansion") ? ["arm9Expansion"] : []),
@@ -1277,6 +1302,26 @@
     return PATCH_REGISTRY.has(patchId);
   }
 
+  function romHasAsciiMarker(bytes, marker) {
+    if (!bytes || !marker || bytes.length < marker.length) {
+      return false;
+    }
+    const needle = Array.from(marker, (char) => char.charCodeAt(0));
+    for (let i = 0; i <= bytes.length - needle.length; i += 1) {
+      let ok = true;
+      for (let j = 0; j < needle.length; j += 1) {
+        if (bytes[i + j] !== needle[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function outputName(inputName, patchIds, options = {}) {
     const dot = inputName.toLowerCase().endsWith(".nds") ? inputName.length - 4 : inputName.length;
     const base = inputName.slice(0, dot) || "platinum";
@@ -1304,6 +1349,8 @@
               ? "modernsleep"
             : id === "modernFreeze"
               ? "modernfreeze"
+            : id === "frostbite"
+              ? "frostbite"
             : id === "modernConfusion"
               ? "modernconfusion"
             : id === "universalInfatuation"

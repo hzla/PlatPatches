@@ -55,6 +55,41 @@ const FAIRY_TET_PATCH = bytesFromHex(`
   14 41 00 00 11 14 44 44 11 1F FF FF FF FF FF
 `);
 
+const FAIRY_TABLE_MULTIPLIER_NIBBLES_REL = 0x10c;
+const TYPE_STEEL = 0x08;
+const TYPE_FAIRY = 0x09;
+const TYPE_MULTI_SUPER_EFF = 20;
+
+function fairyTypeChartPairIndex(attackingType, defendingType) {
+  for (let offset = 0; offset < FAIRY_TABLE_MULTIPLIER_NIBBLES_REL; offset += 2) {
+    const attack = FAIRY_TET_PATCH[offset];
+    const defend = FAIRY_TET_PATCH[offset + 1];
+    if (attack === 0xff && defend === 0xff) {
+      return -1;
+    }
+    if (attack === attackingType && defend === defendingType) {
+      return offset / 2;
+    }
+  }
+
+  return -1;
+}
+
+function fairyTypeChartMultiplier(attackingType, defendingType) {
+  const pairIndex = fairyTypeChartPairIndex(attackingType, defendingType);
+  if (pairIndex < 0) {
+    return 10;
+  }
+  const byte =
+    FAIRY_TET_PATCH[FAIRY_TABLE_MULTIPLIER_NIBBLES_REL + Math.floor(pairIndex / 2)];
+  const nibble = pairIndex % 2 === 0 ? byte >>> 4 : byte & 0x0f;
+  return nibble * 5;
+}
+
+if (fairyTypeChartMultiplier(TYPE_STEEL, TYPE_FAIRY) !== TYPE_MULTI_SUPER_EFF) {
+  throw new Error("Fairy type chart must make Steel super-effective against Fairy.");
+}
+
 const FAIRY_READ1_PATCH = bytesFromHex("c0 46 00 49 88 47 01 94 0f 02 c0 46");
 const FAIRY_READ2_PATCH = bytesFromHex("00 49 88 47 01 94 0f 02 c0 46 c0 46");
 const FAIRY_LOOP1_PATCH = bytesFromHex("c0 46");

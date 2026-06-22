@@ -51,6 +51,16 @@
     throw new Error("PlatinumPatcherFairyPatches failed to load.");
   }
 
+  const modernTypeChartPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/modern-type-chart.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherModernTypeChartPatches
+        : undefined;
+  if (!modernTypeChartPatches) {
+    throw new Error("PlatinumPatcherModernTypeChartPatches failed to load.");
+  }
+
   const infiniteCandyPatchFactory =
     typeof module !== "undefined" && module.exports && typeof require === "function"
       ? require("./src/patches/infinite-candy.js")
@@ -185,6 +195,16 @@
     throw new Error("PlatinumPatcherOverworldSpritePatches failed to load.");
   }
 
+  const trainerClassPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/trainer-classes.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherTrainerClassPatches
+        : undefined;
+  if (!trainerClassPatches) {
+    throw new Error("PlatinumPatcherTrainerClassPatches failed to load.");
+  }
+
   const itemExpansionPatches =
     typeof module !== "undefined" && module.exports && typeof require === "function"
       ? require("./src/patches/item-expansion.js")(core)
@@ -254,6 +274,7 @@
   const EXTRA_TM_PERSONAL_MASK_OFFSET = 0x28;
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
   const SPECIES_NAMES_MESSAGE_MEMBER = 412;
+  const TRAINER_CLASS_NAMES_MESSAGE_MEMBER = 619;
   const S_TMHM_MOVES_ADDRESS = 0x020f0bfc;
   const TMHM_COUNT = 100;
   const VANILLA_TM_COMPAT_MASK_OFFSET = 0x1c;
@@ -295,13 +316,15 @@
     bottleCaps: "Bottle Caps",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
+    modernSteelType: "Modern Steel Type",
     instantText: "Force fast text",
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
+    trainerClassExpansion: "Trainer Class Expansion",
   };
-  const APP_VERSION = "v60";
+  const APP_VERSION = "v61";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -328,6 +351,15 @@
         "Optional Pokemon type update: bytes 6 and 7 of selected poketool/personal/pl_personal.narc entries.",
       ],
     },
+    modernSteelType: {
+      title: "Modern Steel Type",
+      summary:
+        "Uses the modern Steel defensive chart by making Ghost and Dark hit Steel neutrally instead of not very effectively. When Fairy Patch is also selected, it updates the Fairy compressed chart and verifies Steel is super-effective against Fairy.",
+      regions: [
+        "Vanilla overlay 16 type chart: Ghost -> Steel multiplier byte at +0x33CAD, Dark -> Steel multiplier byte at +0x33CC5.",
+        "Fairy overlay 16 compressed type chart: multiplier nibbles at +0x33CCE and +0x33CD2 for Ghost/Dark -> Steel, and +0x33CDA for Steel -> Fairy.",
+      ],
+    },
     frameRate: {
       title: "Unlock framerate",
       summary:
@@ -348,6 +380,19 @@
         "ARM9 renderer-behavior table literal for Unk_ov5_021FB97C is redirected to the relocated table.",
         "Overlay 5 render properties, texture association, and animation table literals for Unk_ov5_021FC194, Unk_ov5_021FC9B4, and Unk_ov5_021FD77C are redirected to relocated copies.",
         "Each custom row maps a new appearance ID to an appended mmodel.narc member and clones renderer, render-property, and animation metadata from an existing overworld ID.",
+      ],
+    },
+    trainerClassExpansion: {
+      title: "Trainer Class Expansion",
+      summary:
+        "Adds new trainer class IDs 105-255 by cloning existing vanilla trainer classes, including names, graphics, gender, payout multiplier, and eye-contact music.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Metadata helper data is stored in data/weather_sys.narc member 9 with marker TRCLSXPNDV1.",
+        "Trainer class text: msgdata/pl_msg.narc members 619 and 620 are extended with class names and class names with articles.",
+        "Trainer graphics: poketool/trgra/trfgra.narc appends or replaces five members per generated class at classId * 5.",
+        "Gender lookup: TrainerClass_Gender keeps its vanilla code but redirects its table literal to the expanded synthetic-overlay table.",
+        "Payout lookup: the BattleScript_CalcPrizeMoney prize multiplier literal in active overlay 16 is redirected to the expanded synthetic-overlay table.",
+        "Eye-contact BGM: Trainer_GetEncounterBGM is hooked so generated classes inherit the clone source's encounter music.",
       ],
     },
     shinyOdds: {
@@ -571,6 +616,7 @@
       summary:
         "Allows Surf and Waterfall use without requiring a party Pokemon to know the matching HM move.",
       regions: [
+        "Overlay 5 Waterfall descent check: RAM 0x021D1E78-0x021D1E79 / overlay 5 +0x10F8.",
         "Overlay 5 field-move party check: RAM 0x021D2832-0x021D2835 / overlay 5 +0x1AB2.",
       ],
     },
@@ -822,6 +868,14 @@
     const file = findFileByPath(rom, MESSAGE_NARC_PATH);
     const narc = rom.slice(file.start, file.end);
     const names = messageBankEntries(narcMemberBytes(narc, SPECIES_NAMES_MESSAGE_MEMBER));
+    return names.map((name, id) => ({ id, name }));
+  }
+
+  function readTrainerClassNames(inputBytes) {
+    const rom = inputBytes instanceof Uint8Array ? inputBytes : new Uint8Array(inputBytes);
+    const file = findFileByPath(rom, MESSAGE_NARC_PATH);
+    const narc = rom.slice(file.start, file.end);
+    const names = messageBankEntries(narcMemberBytes(narc, TRAINER_CLASS_NAMES_MESSAGE_MEMBER));
     return names.map((name, id) => ({ id, name }));
   }
 
@@ -1125,11 +1179,13 @@
     { id: "bottleCaps", apply: bottleCapPatches.bottleCaps },
     { id: "fairyType", apply: fairyPatches.fairyType },
     { id: "fairyPokemonTypes", apply: fairyPatches.fairyPokemonTypes },
+    { id: "modernSteelType", apply: modernTypeChartPatches.modernSteelType },
     { id: "instantText", apply: textSpeedPatches.instantText },
     { id: "text4x", apply: textSpeedPatches.text4x },
     { id: "playerAccuracy", apply: fieldMiscPatches.playerAccuracy },
     { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
     { id: "customOverworldSprites", apply: overworldSpritePatches.customOverworldSprites },
+    { id: "trainerClassExpansion", apply: trainerClassPatches.trainerClassExpansion },
   ]);
 
   async function applySelectedPatches(inputBytes, patchIds, options = {}) {
@@ -1173,6 +1229,7 @@
       selected.has("itemRenewal") ||
       selected.has("natureStatColors") ||
       selected.has("customOverworldSprites") ||
+      selected.has("trainerClassExpansion") ||
       selected.has("itemExpansion") ||
       selected.has("extraTMs") ||
       selected.has("natureMints") ||
@@ -1255,6 +1312,8 @@
                 : "universalinfatuation"
             : id === "modernSnow"
               ? "modernsnow"
+            : id === "modernSteelType"
+              ? "modernsteel"
             : id === "iv15_31"
               ? `iv${ivRangeText(options)}`
             : id === "wildNatures"
@@ -1271,6 +1330,8 @@
               ? "naturecolors"
             : id === "customOverworldSprites"
               ? "customowsprites"
+            : id === "trainerClassExpansion"
+              ? "trainerclasses"
             : id === "instantPartyHealing"
               ? "instanthealing"
             : id === "timeOfDayEvos"
@@ -1338,6 +1399,7 @@
       pokemonWithLevelUpMove,
       readMoveNames,
       readSpeciesNames,
+      readTrainerClassNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,
@@ -1375,6 +1437,7 @@
       pokemonWithLevelUpMove,
       readMoveNames,
       readSpeciesNames,
+      readTrainerClassNames,
       shinyOddsLabel,
       shinyOddsPercentOption,
       shinyThresholdFromPercent,

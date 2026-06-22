@@ -40,6 +40,7 @@
     pokemonWithLevelUpMove,
     readMoveNames,
     readSpeciesNames,
+    readTrainerClassNames,
     shinyOddsLabel,
     shinyOddsPercentOption,
     shinyThresholdFromPercent,
@@ -86,6 +87,12 @@ function initUi() {
   const customOverworldSpriteRows = document.getElementById("customOverworldSpriteRows");
   const customOverworldSpriteStatus = document.getElementById("customOverworldSpriteStatus");
   const customOverworldSpriteRefresh = document.getElementById("customOverworldSpriteRefresh");
+  const trainerClassInput = document.getElementById("trainerClassExpansionPatch");
+  const trainerClassConfig = document.getElementById("trainerClassConfig");
+  const trainerClassRows = document.getElementById("trainerClassRows");
+  const trainerClassStatus = document.getElementById("trainerClassStatus");
+  const trainerClassAddRow = document.getElementById("trainerClassAddRow");
+  const trainerClassCloneOptions = document.getElementById("trainerClassCloneOptions");
   const itemExpansionRows = document.getElementById("itemExpansionRows");
   const itemExpansionStatus = document.getElementById("itemExpansionStatus");
   const itemExpansionAddRow = document.getElementById("itemExpansionAddRow");
@@ -112,6 +119,7 @@ function initUi() {
   let loadedFile = null;
   let loadedBytes = null;
   let downloadUrl = null;
+  let trainerClassNames = [];
   let speciesNames = [];
   let personalEntryCount = 0;
   let activeCompatRow = null;
@@ -232,6 +240,153 @@ function initUi() {
         };
       })
       .filter((row) => row.appearanceId || row.mmodelMember);
+  }
+
+  function renderTrainerClassCloneOptions(bytes) {
+    trainerClassNames = [];
+    if (trainerClassCloneOptions) {
+      trainerClassCloneOptions.textContent = "";
+    }
+    if (!bytes || typeof readTrainerClassNames !== "function") {
+      return;
+    }
+    try {
+      trainerClassNames = readTrainerClassNames(bytes);
+      if (!trainerClassCloneOptions) {
+        return;
+      }
+      trainerClassNames.slice(0, 105).forEach((entry) => {
+        if (!entry || !entry.name) {
+          return;
+        }
+        const option = document.createElement("option");
+        option.value = entry.name;
+        option.label = `#${entry.id}`;
+        trainerClassCloneOptions.append(option);
+      });
+    } catch (error) {
+      trainerClassNames = [];
+      if (trainerClassCloneOptions) {
+        trainerClassCloneOptions.textContent = "";
+      }
+    }
+  }
+
+  function createTrainerClassField(labelText, field, value = "") {
+    const label = document.createElement("label");
+    label.className = "trainer-class-field";
+
+    const span = document.createElement("span");
+    span.textContent = labelText;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.dataset.trainerClassField = field;
+    if (field === "cloneFrom") {
+      input.setAttribute("list", "trainerClassCloneOptions");
+      input.placeholder = "Youngster or 0x2";
+    }
+
+    label.append(span, input);
+    return label;
+  }
+
+  function createTrainerClassRow(values = {}) {
+    const row = document.createElement("div");
+    row.className = "trainer-class-row";
+
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "trainer-class-row-label";
+
+    const remove = document.createElement("button");
+    remove.className = "secondary-button trainer-class-remove";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      row.remove();
+      renumberTrainerClassRows();
+      clearDownload();
+    });
+
+    row.append(
+      rowLabel,
+      createTrainerClassField("Name", "name", values.name || ""),
+      createTrainerClassField("Article", "article", values.article || ""),
+      createTrainerClassField("Clone from", "cloneFrom", values.cloneFrom || "Youngster"),
+      remove
+    );
+    return row;
+  }
+
+  function renumberTrainerClassRows() {
+    if (!trainerClassRows || !trainerClassStatus || !trainerClassAddRow) {
+      return;
+    }
+    const rows = Array.from(trainerClassRows.querySelectorAll(".trainer-class-row"));
+    rows.forEach((row, index) => {
+      const rowLabel = row.querySelector(".trainer-class-row-label");
+      if (rowLabel) {
+        rowLabel.textContent = `Class ${105 + index}`;
+      }
+      const remove = row.querySelector(".trainer-class-remove");
+      if (remove) {
+        remove.setAttribute("aria-label", `Remove trainer class ${105 + index} row`);
+      }
+    });
+    trainerClassAddRow.disabled = rows.length >= 151;
+    trainerClassStatus.classList.remove("ready", "missing");
+    if (!rows.length) {
+      trainerClassStatus.classList.add("missing");
+      trainerClassStatus.textContent = "Add at least one trainer class row.";
+    } else if (rows.length >= 151) {
+      trainerClassStatus.classList.add("ready");
+      trainerClassStatus.textContent = "151 trainer class rows configured.";
+    } else {
+      trainerClassStatus.textContent = `${rows.length} trainer class row${rows.length === 1 ? "" : "s"} configured.`;
+    }
+  }
+
+  function addTrainerClassRow(values = {}) {
+    if (!trainerClassRows) {
+      return;
+    }
+    if (trainerClassRows.querySelectorAll(".trainer-class-row").length >= 151) {
+      return;
+    }
+    trainerClassRows.append(createTrainerClassRow(values));
+    renumberTrainerClassRows();
+  }
+
+  function trainerClassEntries() {
+    if (!trainerClassRows) {
+      return [];
+    }
+    return Array.from(trainerClassRows.querySelectorAll(".trainer-class-row"))
+      .map((row) => {
+        const field = (name) => {
+          const input = row.querySelector(`[data-trainer-class-field="${name}"]`);
+          return input ? input.value.trim() : "";
+        };
+        return {
+          name: field("name"),
+          article: field("article"),
+          cloneFrom: field("cloneFrom"),
+        };
+      })
+      .filter((row) => row.name || row.article || row.cloneFrom);
+  }
+
+  function updateTrainerClassConfigVisibility() {
+    if (!trainerClassConfig || !trainerClassInput) {
+      return;
+    }
+    trainerClassConfig.hidden = !trainerClassInput.checked;
+    if (trainerClassInput.checked && trainerClassRows && !trainerClassRows.querySelector(".trainer-class-row")) {
+      addTrainerClassRow();
+    }
   }
 
   function createItemExpansionField(labelText, field, value = "", multiline = false) {
@@ -835,6 +990,7 @@ function initUi() {
       natureAllowed: selectedNatureIds(),
       universalInfatuationAi: universalInfatuationAiInput.checked,
       customOverworldSprites: customOverworldSpriteEntries(),
+      trainerClasses: trainerClassEntries(),
       expandedItems: expandedItemEntries(),
       extraTms: extraTmEntries(),
       debugFairyBattleTest: Boolean(config.debugFairyBattleTest),
@@ -871,6 +1027,10 @@ function initUi() {
       const count = Array.isArray(options && options.customOverworldSprites)
         ? options.customOverworldSprites.length
         : 0;
+      return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
+    }
+    if (id === "trainerClassExpansion") {
+      const count = Array.isArray(options && options.trainerClasses) ? options.trainerClasses.length : 0;
       return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
     }
     if (id === "itemExpansion") {
@@ -1079,6 +1239,8 @@ function initUi() {
   updateNatureCount();
   updateArm9ExpansionStatus();
   renderCustomOverworldSpriteRows();
+  renumberTrainerClassRows();
+  updateTrainerClassConfigVisibility();
   textCharsPerFrameInput.addEventListener("input", () => {
     updateTextSpeedValue();
     clearDownload();
@@ -1169,12 +1331,27 @@ function initUi() {
     if (event.target === extraTmsInput) {
       updateExtraTmConfigVisibility();
     }
+    if (event.target === trainerClassInput) {
+      updateTrainerClassConfigVisibility();
+    }
     clearDownload();
   });
   forceInput.addEventListener("change", clearDownload);
   outputNameInput.addEventListener("input", clearDownload);
   if (customOverworldSpriteRows) {
     customOverworldSpriteRows.addEventListener("input", clearDownload);
+  }
+  if (trainerClassRows) {
+    trainerClassRows.addEventListener("input", () => {
+      renumberTrainerClassRows();
+      clearDownload();
+    });
+  }
+  if (trainerClassAddRow) {
+    trainerClassAddRow.addEventListener("click", () => {
+      addTrainerClassRow();
+      clearDownload();
+    });
   }
   if (itemExpansionRows) {
     itemExpansionRows.addEventListener("input", () => {
@@ -1213,6 +1390,7 @@ function initUi() {
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
+      renderTrainerClassCloneOptions();
       renderExtraTmMoveOptions();
       renderExtraTmSpeciesOptions();
       fileSubtitle.textContent = "The patched ROM is generated locally in your browser.";
@@ -1228,6 +1406,7 @@ function initUi() {
       romStatus.classList.add("ready");
       updateArm9ExpansionStatus(loadedBytes);
       renderCustomOverworldSpriteRows(loadedBytes);
+      renderTrainerClassCloneOptions(loadedBytes);
       renderExtraTmMoveOptions(loadedBytes);
       renderExtraTmSpeciesOptions(loadedBytes);
       loadExtraTmState(loadedBytes);
@@ -1245,6 +1424,7 @@ function initUi() {
       romStatus.classList.remove("ready");
       updateArm9ExpansionStatus();
       renderCustomOverworldSpriteRows();
+      renderTrainerClassCloneOptions();
       renderExtraTmMoveOptions();
       renderExtraTmSpeciesOptions();
       setLog(`Error: ${error.message}`);

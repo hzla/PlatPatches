@@ -367,6 +367,83 @@ input[type="file"] {
   outline: 2px solid rgba(35, 104, 162, 0.18);
 }
 
+.trainer-class-config {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.trainer-class-config[hidden] {
+  display: none;
+}
+
+.trainer-class-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.trainer-class-toolbar .patch-status {
+  margin-top: 0;
+}
+
+.trainer-class-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.trainer-class-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.6fr) repeat(3, minmax(140px, 1fr)) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.trainer-class-row-label {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.trainer-class-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trainer-class-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.trainer-class-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(35, 104, 162, 0.18);
+}
+
+.trainer-class-remove {
+  min-height: 36px;
+}
+
 .item-expansion-config {
   display: grid;
   gap: 10px;
@@ -1083,6 +1160,10 @@ pre {
   }
 
   .ow-sprite-row {
+    grid-template-columns: 1fr;
+  }
+
+  .trainer-class-row {
     grid-template-columns: 1fr;
   }
 

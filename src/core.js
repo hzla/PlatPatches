@@ -456,6 +456,88 @@ function replaceNarcMembers(narc, replacements) {
   return rebuilt;
 }
 
+function rebuildNarcFromMembers(narc, members) {
+  const parsed = parseNarc(narc);
+  const fatMagic = readMagic(narc, parsed.fatBlock.offset);
+  const dataMagic = readMagic(narc, parsed.dataBlock.offset);
+  const middleBlocks = narc.slice(parsed.fatBlock.offset + parsed.fatBlock.size, parsed.dataBlock.offset);
+  const chunks = [];
+  const rebuiltEntries = [];
+  let cursor = 0;
+
+  for (const member of members) {
+    const bytes = member instanceof Uint8Array ? member : new Uint8Array(member || 0);
+    rebuiltEntries.push({ start: cursor, end: cursor + bytes.length });
+    chunks.push(bytes);
+    cursor += bytes.length;
+    const aligned = (cursor + 3) & ~3;
+    if (aligned !== cursor) {
+      chunks.push(new Uint8Array(aligned - cursor));
+      cursor = aligned;
+    }
+  }
+
+  const fatSize = 12 + rebuiltEntries.length * 8;
+  const dataSize = 8 + cursor;
+  const totalSize = 0x10 + fatSize + middleBlocks.length + dataSize;
+  const rebuilt = new Uint8Array(totalSize);
+
+  rebuilt.set(narc.slice(0, 0x10), 0);
+  writeU32(rebuilt, 8, totalSize);
+
+  let out = 0x10;
+  rebuilt.set(asciiBytes(fatMagic), out);
+  writeU32(rebuilt, out + 4, fatSize);
+  writeU32(rebuilt, out + 8, rebuiltEntries.length);
+  for (let i = 0; i < rebuiltEntries.length; i += 1) {
+    writeU32(rebuilt, out + 12 + i * 8, rebuiltEntries[i].start);
+    writeU32(rebuilt, out + 16 + i * 8, rebuiltEntries[i].end);
+  }
+  out += fatSize;
+
+  rebuilt.set(middleBlocks, out);
+  out += middleBlocks.length;
+
+  rebuilt.set(asciiBytes(dataMagic), out);
+  writeU32(rebuilt, out + 4, dataSize);
+  out += 8;
+
+  let dataCursor = out;
+  for (const chunk of chunks) {
+    rebuilt.set(chunk, dataCursor);
+    dataCursor += chunk.length;
+  }
+
+  return rebuilt;
+}
+
+function replaceOrAppendNarcMembers(narc, replacements) {
+  const parsed = parseNarc(narc);
+  const replacementMap = new Map(replacements);
+  let count = parsed.entries.length;
+
+  for (const index of replacementMap.keys()) {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new PatchError(`NARC replacement member ${index} is invalid.`);
+    }
+    count = Math.max(count, index + 1);
+  }
+
+  const members = [];
+  for (let i = 0; i < count; i += 1) {
+    if (replacementMap.has(i)) {
+      members.push(replacementMap.get(i));
+    } else if (i < parsed.entries.length) {
+      const entry = parsed.entries[i];
+      members.push(narc.slice(parsed.dataBlock.dataOffset + entry.start, parsed.dataBlock.dataOffset + entry.end));
+    } else {
+      members.push(new Uint8Array(0));
+    }
+  }
+
+  return rebuildNarcFromMembers(narc, members);
+}
+
 function replaceRomFile(rom, file, replacement, label) {
   const oldSize = file.end - file.start;
   if (bytesEqual(rom, file.start, replacement) && oldSize === replacement.length) {
@@ -1091,6 +1173,7 @@ class SyntheticOverlayAllocator {
     readMagic,
     parseNarc,
     replaceNarcMembers,
+    replaceOrAppendNarcMembers,
     replaceRomFile,
     replaceRomFileAllowGrowth,
     narcMemberLength,

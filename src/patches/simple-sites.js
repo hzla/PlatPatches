@@ -168,6 +168,15 @@ const SURF_WATERFALL_CHECK_SITES = [
   {
     kind: "overlay",
     overlayId: OVERLAY_5,
+    ramAddress: 0x021d1e78,
+    expected: bytesFromHex("01 d0 02 20 06 43"),
+    patched: bytesFromHex("00 00 02 20 06 43"),
+    fallbackRadius: 0x100,
+    label: "Waterfall descent HM party check",
+  },
+  {
+    kind: "overlay",
+    overlayId: OVERLAY_5,
     ramAddress: 0x021d2832,
     expected: bytesFromHex("82 f6 b5 f8"),
     patched: bytesFromHex("00 20 00 00"),

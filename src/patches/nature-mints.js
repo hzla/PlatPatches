@@ -61,7 +61,7 @@
   const PERSONAL_GENDER_RATIO_OFFSET = 0x10;
 
   const POKEMON_CHECK_ITEM_EFFECTS_RAM = 0x02096420;
-  const POKEMON_CHECK_ITEM_EFFECTS_RETURN_RAM = 0x02096428;
+  const POKEMON_CHECK_ITEM_EFFECTS_RETURN_RAM = 0x0209642c;
   const PARTY_ITEM_DISPATCH_RAM = 0x020852b8;
   const PARTY_ITEM_DISPATCH_RETURN_RAM = 0x020852c0;
 
@@ -109,7 +109,8 @@
       label: "Pokemon_CheckItemEffects",
       ram: POKEMON_CHECK_ITEM_EFFECTS_RAM,
       entryKey: "checkAddress",
-      original: bytesFromHex("f8 b5 86 b0 01 91 06 1c"),
+      original: bytesFromHex("f8 b5 86 b0 01 91 06 1c 17 1c 01 98"),
+      preserveR3: true,
     },
     {
       label: "party item dispatcher",
@@ -127,20 +128,37 @@
     return bytes;
   }
 
+  function thumbAbsoluteBranchPreserveR3(targetAddress) {
+    const bytes = new Uint8Array(12);
+    writeU16(bytes, 0, 0xb508); // push {r3, lr}
+    writeU16(bytes, 2, 0x4b01); // ldr r3, [pc, #4]
+    writeU16(bytes, 4, 0x9301); // replace saved lr with branch target
+    writeU16(bytes, 6, 0xbd08); // pop {r3, pc}
+    writeU32(bytes, 8, targetAddress | 1);
+    return bytes;
+  }
+
   function isSyntheticOverlayBranch(data, offset) {
     if (offset < 0 || offset + 8 > data.length) {
       return false;
     }
-    if (readU32(data, offset) !== 0x47184b00) {
-      return false;
+    if (readU32(data, offset) === 0x47184b00) {
+      const target = readU32(data, offset + 4) & ~1;
+      return target >= SYNTH_OVERLAY_RAM_BASE && target < SYNTH_OVERLAY_RAM_BASE + DSPRE_SYNTH_OVERLAY_SIZE;
     }
-    const target = readU32(data, offset + 4) & ~1;
-    return target >= SYNTH_OVERLAY_RAM_BASE && target < SYNTH_OVERLAY_RAM_BASE + DSPRE_SYNTH_OVERLAY_SIZE;
+    if (offset + 12 <= data.length && readU32(data, offset) === 0x4b01b508 && readU32(data, offset + 4) === 0xbd089301) {
+      const target = readU32(data, offset + 8) & ~1;
+      return target >= SYNTH_OVERLAY_RAM_BASE && target < SYNTH_OVERLAY_RAM_BASE + DSPRE_SYNTH_OVERLAY_SIZE;
+    }
+    return false;
   }
 
   function syntheticOverlayBranchTarget(data, offset) {
     if (!isSyntheticOverlayBranch(data, offset)) {
       return 0;
+    }
+    if (readU32(data, offset) === 0x4b01b508 && readU32(data, offset + 4) === 0xbd089301) {
+      return readU32(data, offset + 8) & ~1;
     }
     return readU32(data, offset + 4) & ~1;
   }
@@ -283,7 +301,9 @@
 
     for (const hook of HOOK_SITES) {
       const offset = arm9Offset(rom, hook.ram, hook.original.length);
-      const patched = thumbAbsoluteBranch(allocation.built[hook.entryKey]);
+      const patched = hook.preserveR3
+        ? thumbAbsoluteBranchPreserveR3(allocation.built[hook.entryKey])
+        : thumbAbsoluteBranch(allocation.built[hook.entryKey]);
       let state;
       try {
         state = requireBytes(rom, offset, hook.original, patched, force, `Nature Mints ${hook.label} hook`);

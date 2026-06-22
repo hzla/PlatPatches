@@ -31,6 +31,23 @@
 `;
   }
 
+  function trainerClassExpansionHelper({ helperAddress, trainerLoadParamAddress, eyeBgmTableAddress }) {
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r4,lr}
+  mov r1,1
+  bl ${hex32(trainerLoadParamAddress)}
+  lsl r0,r0,1
+  ldr r1,=${hex32(eyeBgmTableAddress)}
+  ldrh r0,[r1,r0]
+  pop {r4,pc}
+  .pool
+.close
+`;
+  }
+
   function modernParalysisThunderWaveHelper({ helperAddress }) {
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
@@ -1487,24 +1504,42 @@ ${pocketRows.join("\n")}
           .join(", ")}`
       );
     }
-    const restoreCheckFrame = `  mov r0,r4
+    const restoreCheckFrameForVanilla = `  mov r0,r4
   mov r1,r5
-  ldr r4,[sp]
-  ldr r5,[sp,4]
-  ldr r3,[sp,8]
-  add sp,12
-  mov lr,r3`;
+  ldr r2,[sp]
+  ldr r3,[sp,4]
+  ldr r4,[sp,8]
+  ldr r5,[sp,12]
+  ldr r6,[sp,24]
+  mov lr,r6
+  ldr r6,[sp,16]
+  ldr r7,[sp,20]
+  add sp,28`;
+    const restoreCheckFrameForFallback = `  mov r0,r4
+  mov r1,r5
+  ldr r7,[sp,24]
+  mov lr,r7
+  ldr r7,=${hex32(fallbackCheckAddress | 1)}
+  str r7,[sp,24]
+  ldr r2,[sp]
+  ldr r3,[sp,4]
+  ldr r4,[sp,8]
+  ldr r5,[sp,12]
+  ldr r6,[sp,16]
+  ldr r7,[sp,20]
+  add sp,24
+  pop {pc}`;
     const checkNoMatchCode = fallbackCheckAddress
-      ? `${restoreCheckFrame}
-  ldr r3,=${hex32(fallbackCheckAddress | 1)}
-  bx r3`
-      : `${restoreCheckFrame}
+      ? restoreCheckFrameForFallback
+      : `${restoreCheckFrameForVanilla}
   push {r3,r4,r5,r6,r7,lr}
   sub sp,0x18
   str r1,[sp,4]
   mov r6,r0
-  ldr r3,=${hex32(checkReturnAddress)}
-  bx r3`;
+  mov r7,r2
+  ldr r0,[sp,4]
+  ldr r1,=${hex32(checkReturnAddress | 1)}
+  bx r1`;
     const restoreDispatchFrame = `  mov r0,r4
   ldr r4,[sp]
   ldr r5,[sp,4]
@@ -1520,14 +1555,14 @@ ${pocketRows.join("\n")}
   mov r4,r0
   ldr r0,=${hex32(appPartyMenuOffset)}
   ldr r0,[r4,r0]
-  ldr r3,=${hex32(dispatchReturnAddress)}
+  ldr r3,=${hex32(dispatchReturnAddress | 1)}
   bx r3`;
 
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
 .thumb
 .org ${hex32(helperAddress)}
-  push {r4,r5,lr}
+  push {r2,r3,r4,r5,r6,r7,lr}
   mov r4,r0
   mov r5,r1
   mov r0,r1
@@ -1539,7 +1574,7 @@ ${checkNoMatchCode}
   mov r1,r0
   mov r0,r4
   bl ${hex32(canUseAddress)}
-  pop {r4,r5,pc}
+  pop {r2,r3,r4,r5,r6,r7,pc}
   .pool
 
 .org ${hex32(dispatchAddress)}
@@ -2005,24 +2040,42 @@ ${genderRatioRows.join("\n")}
             .padStart(4, "0")}`
       )
       .join("\n");
-    const restoreCheckFrame = `  mov r0,r4
+    const restoreCheckFrameForVanilla = `  mov r0,r4
   mov r1,r5
-  ldr r4,[sp]
-  ldr r5,[sp,4]
-  ldr r3,[sp,8]
-  add sp,12
-  mov lr,r3`;
+  ldr r2,[sp]
+  ldr r3,[sp,4]
+  ldr r4,[sp,8]
+  ldr r5,[sp,12]
+  ldr r6,[sp,24]
+  mov lr,r6
+  ldr r6,[sp,16]
+  ldr r7,[sp,20]
+  add sp,28`;
+    const restoreCheckFrameForFallback = `  mov r0,r4
+  mov r1,r5
+  ldr r7,[sp,24]
+  mov lr,r7
+  ldr r7,=${hex32(fallbackCheckAddress | 1)}
+  str r7,[sp,24]
+  ldr r2,[sp]
+  ldr r3,[sp,4]
+  ldr r4,[sp,8]
+  ldr r5,[sp,12]
+  ldr r6,[sp,16]
+  ldr r7,[sp,20]
+  add sp,24
+  pop {pc}`;
     const checkNoMatchCode = fallbackCheckAddress
-      ? `${restoreCheckFrame}
-  ldr r3,=${hex32(fallbackCheckAddress | 1)}
-  bx r3`
-      : `${restoreCheckFrame}
+      ? restoreCheckFrameForFallback
+      : `${restoreCheckFrameForVanilla}
   push {r3,r4,r5,r6,r7,lr}
   sub sp,0x18
   str r1,[sp,4]
   mov r6,r0
-  ldr r3,=${hex32(checkReturnAddress)}
-  bx r3`;
+  mov r7,r2
+  ldr r0,[sp,4]
+  ldr r1,=${hex32(checkReturnAddress | 1)}
+  bx r1`;
     const restoreDispatchFrame = `  mov r0,r4
   ldr r4,[sp]
   ldr r5,[sp,4]
@@ -2038,14 +2091,14 @@ ${genderRatioRows.join("\n")}
   mov r4,r0
   ldr r0,=${hex32(appPartyMenuOffset)}
   ldr r0,[r4,r0]
-  ldr r3,=${hex32(dispatchReturnAddress)}
+  ldr r3,=${hex32(dispatchReturnAddress | 1)}
   bx r3`;
 
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
 .thumb
 .org ${hex32(helperAddress)}
-  push {r4,r5,lr}
+  push {r2,r3,r4,r5,r6,r7,lr}
   mov r4,r0
   mov r5,r1
   mov r0,r1
@@ -2057,7 +2110,7 @@ ${checkNoMatchCode}
   mov r1,r0
   mov r0,r4
   bl ${hex32(canUseAddress)}
-  pop {r4,r5,pc}
+  pop {r2,r3,r4,r5,r6,r7,pc}
   .pool
 
 .org ${hex32(dispatchAddress)}
@@ -2368,5 +2421,6 @@ ${rows}
     modernSleepHelper,
     natureMintsHelper,
     natureStatColorsHelper,
+    trainerClassExpansionHelper,
   };
 });

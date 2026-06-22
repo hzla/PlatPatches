@@ -377,6 +377,10 @@ input[type="file"] {
   display: none;
 }
 
+.patch-card:has(#trainerClassExpansionPatch) {
+  display: none;
+}
+
 .trainer-class-toolbar {
   display: flex;
   flex-wrap: wrap;

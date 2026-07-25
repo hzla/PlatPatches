@@ -93,6 +93,12 @@ function initUi() {
   const trainerClassStatus = document.getElementById("trainerClassStatus");
   const trainerClassAddRow = document.getElementById("trainerClassAddRow");
   const trainerClassCloneOptions = document.getElementById("trainerClassCloneOptions");
+  const variableTrainerPartiesInput = document.getElementById("variableTrainerPartiesPatch");
+  const variableTrainerPartiesConfig = document.getElementById("variableTrainerPartiesConfig");
+  const variableTrainerPartiesClearItems = document.getElementById("variableTrainerPartiesClearItems");
+  const variableTrainerPartiesRows = document.getElementById("variableTrainerPartiesRows");
+  const variableTrainerPartiesStatus = document.getElementById("variableTrainerPartiesStatus");
+  const variableTrainerPartiesAddRow = document.getElementById("variableTrainerPartiesAddRow");
   const itemExpansionRows = document.getElementById("itemExpansionRows");
   const itemExpansionStatus = document.getElementById("itemExpansionStatus");
   const itemExpansionAddRow = document.getElementById("itemExpansionAddRow");
@@ -386,6 +392,119 @@ function initUi() {
     trainerClassConfig.hidden = !trainerClassInput.checked;
     if (trainerClassInput.checked && trainerClassRows && !trainerClassRows.querySelector(".trainer-class-row")) {
       addTrainerClassRow();
+    }
+  }
+
+  function createVariableTrainerPartyField(labelText, field, value = "", placeholder = "") {
+    const label = document.createElement("label");
+    label.className = "variable-trainer-field";
+
+    const span = document.createElement("span");
+    span.textContent = labelText;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.dataset.variableTrainerField = field;
+
+    label.append(span, input);
+    return label;
+  }
+
+  function createVariableTrainerPartyRow(values = {}) {
+    const row = document.createElement("div");
+    row.className = "variable-trainer-row";
+
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "variable-trainer-row-label";
+
+    const remove = document.createElement("button");
+    remove.className = "secondary-button variable-trainer-remove";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      row.remove();
+      renumberVariableTrainerPartyRows();
+      clearDownload();
+    });
+
+    const alternates = Array.isArray(values.alternatePartyIds) ? values.alternatePartyIds : [];
+    row.append(
+      rowLabel,
+      createVariableTrainerPartyField("Trainer ID", "trainerId", values.trainerId || "", "59"),
+      createVariableTrainerPartyField("Alt 1", "alt1", alternates[0] || "", "100"),
+      createVariableTrainerPartyField("Alt 2", "alt2", alternates[1] || "", "101"),
+      createVariableTrainerPartyField("Alt 3", "alt3", alternates[2] || "", "102"),
+      createVariableTrainerPartyField("Alt 4", "alt4", alternates[3] || "", "103"),
+      remove
+    );
+    return row;
+  }
+
+  function renumberVariableTrainerPartyRows() {
+    if (!variableTrainerPartiesRows || !variableTrainerPartiesStatus || !variableTrainerPartiesAddRow) {
+      return;
+    }
+    const rows = Array.from(variableTrainerPartiesRows.querySelectorAll(".variable-trainer-row"));
+    rows.forEach((row, index) => {
+      const rowLabel = row.querySelector(".variable-trainer-row-label");
+      if (rowLabel) {
+        rowLabel.textContent = `Row ${index + 1}`;
+      }
+      const remove = row.querySelector(".variable-trainer-remove");
+      if (remove) {
+        remove.setAttribute("aria-label", `Remove variable trainer party row ${index + 1}`);
+      }
+    });
+    variableTrainerPartiesStatus.classList.remove("ready", "missing");
+    if (!rows.length) {
+      variableTrainerPartiesStatus.textContent = "No variant rows configured; clear-items only is allowed.";
+    } else {
+      variableTrainerPartiesStatus.classList.add("ready");
+      variableTrainerPartiesStatus.textContent = `${rows.length} trainer row${rows.length === 1 ? "" : "s"} configured.`;
+    }
+  }
+
+  function addVariableTrainerPartyRow(values = {}) {
+    if (!variableTrainerPartiesRows) {
+      return;
+    }
+    variableTrainerPartiesRows.append(createVariableTrainerPartyRow(values));
+    renumberVariableTrainerPartyRows();
+  }
+
+  function variableTrainerPartyEntries() {
+    if (!variableTrainerPartiesRows) {
+      return [];
+    }
+    return Array.from(variableTrainerPartiesRows.querySelectorAll(".variable-trainer-row"))
+      .map((row) => {
+        const field = (name) => {
+          const input = row.querySelector(`[data-variable-trainer-field="${name}"]`);
+          return input ? input.value.trim() : "";
+        };
+        return {
+          trainerId: field("trainerId"),
+          alternatePartyIds: [field("alt1"), field("alt2"), field("alt3"), field("alt4")],
+        };
+      })
+      .filter((row) => row.trainerId || row.alternatePartyIds.some(Boolean));
+  }
+
+  function updateVariableTrainerPartiesConfigVisibility() {
+    if (!variableTrainerPartiesConfig || !variableTrainerPartiesInput) {
+      return;
+    }
+    variableTrainerPartiesConfig.hidden = !variableTrainerPartiesInput.checked;
+    if (
+      variableTrainerPartiesInput.checked &&
+      variableTrainerPartiesRows &&
+      !variableTrainerPartiesRows.querySelector(".variable-trainer-row")
+    ) {
+      addVariableTrainerPartyRow();
     }
   }
 
@@ -991,6 +1110,10 @@ function initUi() {
       universalInfatuationAi: universalInfatuationAiInput.checked,
       customOverworldSprites: customOverworldSpriteEntries(),
       trainerClasses: trainerClassEntries(),
+      variableTrainerParties: variableTrainerPartyEntries(),
+      variableTrainerPartiesClearItems: variableTrainerPartiesClearItems
+        ? variableTrainerPartiesClearItems.checked
+        : true,
       expandedItems: expandedItemEntries(),
       extraTms: extraTmEntries(),
       debugFairyBattleTest: Boolean(config.debugFairyBattleTest),
@@ -1031,6 +1154,12 @@ function initUi() {
     }
     if (id === "trainerClassExpansion") {
       const count = Array.isArray(options && options.trainerClasses) ? options.trainerClasses.length : 0;
+      return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
+    }
+    if (id === "variableTrainerParties") {
+      const count = Array.isArray(options && options.variableTrainerParties)
+        ? options.variableTrainerParties.length
+        : 0;
       return `${PATCHES[id]} (${count} row${count === 1 ? "" : "s"})`;
     }
     if (id === "itemExpansion") {
@@ -1241,6 +1370,8 @@ function initUi() {
   renderCustomOverworldSpriteRows();
   renumberTrainerClassRows();
   updateTrainerClassConfigVisibility();
+  renumberVariableTrainerPartyRows();
+  updateVariableTrainerPartiesConfigVisibility();
   textCharsPerFrameInput.addEventListener("input", () => {
     updateTextSpeedValue();
     clearDownload();
@@ -1334,6 +1465,9 @@ function initUi() {
     if (event.target === trainerClassInput) {
       updateTrainerClassConfigVisibility();
     }
+    if (event.target === variableTrainerPartiesInput) {
+      updateVariableTrainerPartiesConfigVisibility();
+    }
     clearDownload();
   });
   forceInput.addEventListener("change", clearDownload);
@@ -1350,6 +1484,21 @@ function initUi() {
   if (trainerClassAddRow) {
     trainerClassAddRow.addEventListener("click", () => {
       addTrainerClassRow();
+      clearDownload();
+    });
+  }
+  if (variableTrainerPartiesRows) {
+    variableTrainerPartiesRows.addEventListener("input", () => {
+      renumberVariableTrainerPartyRows();
+      clearDownload();
+    });
+  }
+  if (variableTrainerPartiesClearItems) {
+    variableTrainerPartiesClearItems.addEventListener("change", clearDownload);
+  }
+  if (variableTrainerPartiesAddRow) {
+    variableTrainerPartiesAddRow.addEventListener("click", () => {
+      addVariableTrainerPartyRow();
       clearDownload();
     });
   }

@@ -74,6 +74,27 @@
               </div>
 
               <div class="patch-card patch-card-config patch-card-wide">
+                <input id="variableTrainerPartiesPatch" type="checkbox" value="variableTrainerParties" />
+                <div class="patch-body">
+                  <label class="patch-title" for="variableTrainerPartiesPatch">
+                    <strong>Variable Trainer Parties</strong>
+                    <small>Uses trainer item fields as alternate trpoke member refs with weighted slot-level substitutions.</small>
+                  </label>
+                  <div class="variable-trainer-config" id="variableTrainerPartiesConfig" hidden>
+                    <label class="nested-toggle" for="variableTrainerPartiesClearItems">
+                      <input id="variableTrainerPartiesClearItems" type="checkbox" checked />
+                      <span>Clear all trainer item fields before writing variant refs</span>
+                    </label>
+                    <div class="variable-trainer-toolbar">
+                      <small class="patch-status" id="variableTrainerPartiesStatus">Add trainer rows or use the clear-items toggle only.</small>
+                      <button id="variableTrainerPartiesAddRow" class="secondary-button" type="button">Add row</button>
+                    </div>
+                    <div class="variable-trainer-rows" id="variableTrainerPartiesRows"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="patch-card patch-card-config patch-card-wide">
                 <input id="itemExpansionPatch" type="checkbox" value="itemExpansion" />
                 <div class="patch-body">
                   <label class="patch-title" for="itemExpansionPatch">
@@ -592,6 +613,7 @@
     <script src="./src/patches/summary-screen.js?v=61"></script>
     <script src="./src/patches/overworld-sprites.js?v=61"></script>
     <script src="./src/patches/trainer-classes.js?v=61"></script>
+    <script src="./src/patches/variable-trainer-parties.js?v=61"></script>
     <script src="./src/patches/item-expansion.js?v=61"></script>
     <script src="./src/patches/extra-tms.js?v=61"></script>
     <script src="./src/patches/nature-mints.js?v=61"></script>

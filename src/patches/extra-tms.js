@@ -57,6 +57,8 @@
   const MARKER_TEXT = "EXTRATMSV1";
   const MARKER = asciiBytes(`${MARKER_TEXT}\0\0\0\0\0\0`);
   const MAX_EXTRA_TMS = 60;
+  const SYNTHETIC_OVERLAY_OFFSET = 0x13000;
+  const SYNTHETIC_OVERLAY_CAPACITY = 0x1000;
   const VANILLA_EXTRA_TM_ROWS = 28;
   const PERSONAL_NARC_PATH = "poketool/personal/pl_personal.narc";
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
@@ -513,6 +515,9 @@
       label: "Extra TMs",
       alignment: 0x10,
       updateExisting: true,
+      preferredOffset: SYNTHETIC_OVERLAY_OFFSET,
+      preferredCapacity: SYNTHETIC_OVERLAY_CAPACITY,
+      relocateExisting: true,
     });
     const changedHooks = [];
 

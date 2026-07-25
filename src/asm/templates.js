@@ -48,6 +48,172 @@
 `;
   }
 
+  function variableTrainerPartiesHelper({
+    helperAddress,
+    trainerBuildPartyReturnAddress,
+    narcReadFromMemberAddress,
+    narcGetMemberSizeAddress,
+    lcrngNextAddress,
+    trpokeMemberCount,
+  }) {
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,0x40
+  mov r4,r0
+  mov r5,r1
+  mov r0,lr
+  str r0,[sp,0x34]
+
+  add r0,sp,0x04
+  mov r1,0x39
+  mov r2,r4
+  mov r3,0
+  mov r6,0x14
+  str r6,[sp]
+  bl ${hex32(narcReadFromMemberAddress)}
+
+  add r0,sp,0x04
+  ldrb r1,[r0]
+  cmp r1,1
+  beq @@record_moves
+  cmp r1,2
+  beq @@record_item
+  cmp r1,3
+  beq @@record_moves_item
+  mov r6,8
+  b @@record_ready
+@@record_moves:
+  mov r6,0x10
+  b @@record_ready
+@@record_item:
+  mov r6,0x0A
+  b @@record_ready
+@@record_moves_item:
+  mov r6,0x12
+@@record_ready:
+  ldrb r7,[r0,0x03]
+  cmp r7,6
+  bls @@party_size_ready
+  mov r7,6
+@@party_size_ready:
+  str r7,[sp,0x24]
+  cmp r7,0
+  beq @@done
+  mov r0,r7
+  mul r0,r6
+  str r0,[sp]
+  mov r0,r5
+  mov r1,0x3A
+  mov r2,r4
+  mov r3,0
+  bl ${hex32(narcReadFromMemberAddress)}
+
+  ldr r0,[sp,0x34]
+  ldr r1,=${hex32(trainerBuildPartyReturnAddress)}
+  cmp r0,r1
+  bne @@done
+
+  mov r0,0
+  str r0,[sp,0x20]
+@@slot_loop:
+  ldr r7,[sp,0x20]
+  ldr r0,[sp,0x24]
+  cmp r7,r0
+  bcs @@done
+  mov r0,r7
+  mul r0,r6
+  str r0,[sp,0x28]
+  add r1,r5,r0
+  ldrh r0,[r1,0x02]
+  str r0,[sp,0x2C]
+@@roll_loop:
+  bl ${hex32(lcrngNextAddress)}
+  mov r1,0xFF
+  and r0,r1
+  cmp r0,0xFF
+  beq @@roll_loop
+  str r0,[sp,0x30]
+  mov r0,0
+  str r0,[sp,0x38]
+  mov r7,0
+@@alt_loop:
+  cmp r7,4
+  bcs @@next_slot
+  add r0,sp,0x08
+  mov r1,r7
+  lsl r1,r1,1
+  ldrh r0,[r0,r1]
+  cmp r0,0
+  beq @@advance_alt
+  ldr r1,=0x${trpokeMemberCount.toString(16).toUpperCase().padStart(4, "0")}
+  cmp r0,r1
+  bcs @@advance_alt
+  str r0,[sp,0x3C]
+  mov r1,r0
+  mov r0,0x3A
+  bl ${hex32(narcGetMemberSizeAddress)}
+  ldr r1,[sp,0x28]
+  add r1,r1,r6
+  cmp r0,r1
+  bcc @@advance_alt
+
+  add r0,sp,0x10
+  mov r1,0x3A
+  ldr r2,[sp,0x3C]
+  ldr r3,[sp,0x28]
+  mov r4,6
+  str r4,[sp]
+  bl ${hex32(narcReadFromMemberAddress)}
+
+  add r0,sp,0x10
+  ldrh r1,[r0,0x04]
+  ldr r2,=0x000003FF
+  and r1,r2
+  cmp r1,0
+  beq @@advance_alt
+  ldrh r0,[r0,0x02]
+  cmp r0,0
+  beq @@advance_alt
+  cmp r0,0xFF
+  bhi @@advance_alt
+  ldr r1,[sp,0x38]
+  add r1,r1,r0
+  str r1,[sp,0x38]
+  ldr r0,[sp,0x30]
+  cmp r0,r1
+  bcc @@selected_alt
+@@advance_alt:
+  add r7,1
+  b @@alt_loop
+
+@@selected_alt:
+  ldr r3,[sp,0x28]
+  add r0,r5,r3
+  mov r1,0x3A
+  ldr r2,[sp,0x3C]
+  str r6,[sp]
+  bl ${hex32(narcReadFromMemberAddress)}
+  ldr r1,[sp,0x28]
+  add r1,r5,r1
+  ldr r0,[sp,0x2C]
+  strh r0,[r1,0x02]
+@@next_slot:
+  ldr r0,[sp,0x20]
+  add r0,1
+  str r0,[sp,0x20]
+  b @@slot_loop
+
+@@done:
+  add sp,0x40
+  pop {r4,r5,r6,r7,pc}
+  .pool
+.close
+`;
+  }
+
   function modernParalysisThunderWaveHelper({ helperAddress }) {
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
@@ -1491,12 +1657,19 @@ ${compatMaskWords}
   bl ${hex32(itemIsTmHmAddress)}
   cmp r0,0
   bne @@medicine_next_overflow
+  ldr r0,=${hex32(firstItemId)}
+  cmp r6,r0
+  bcc @@medicine_next_overflow
+  sub r1,r6,r0
+  ldr r0,=${hex32(entries.length)}
+  cmp r1,r0
+  bcs @@medicine_next_overflow
   ldr r0,=${hex32(pocketTableAddress)}
-  mov r1,r5
-  lsr r1,r1,1
-  ldrb r0,[r0,r1]
-  mov r1,1
-  tst r5,r1
+  mov r2,r1
+  lsr r2,r2,1
+  ldrb r0,[r0,r2]
+  mov r2,1
+  tst r1,r2
   beq @@medicine_low_nibble
   lsr r0,r0,4
 @@medicine_low_nibble:
@@ -2559,5 +2732,6 @@ ${rows}
     natureMintsHelper,
     natureStatColorsHelper,
     trainerClassExpansionHelper,
+    variableTrainerPartiesHelper,
   };
 });

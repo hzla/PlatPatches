@@ -51,6 +51,8 @@
 
   const MARKER_TEXT = "NATUREMINTV1";
   const MARKER = asciiBytes(`${MARKER_TEXT}\0\0\0\0`);
+  const SYNTHETIC_OVERLAY_OFFSET = 0x14000;
+  const SYNTHETIC_OVERLAY_CAPACITY = 0x1000;
   const NATURE_MINT_COUNT = 25;
 
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
@@ -296,6 +298,9 @@
       label: "Nature Mints",
       alignment: 0x10,
       updateExisting: true,
+      preferredOffset: SYNTHETIC_OVERLAY_OFFSET,
+      preferredCapacity: SYNTHETIC_OVERLAY_CAPACITY,
+      relocateExisting: true,
     });
     const changedHooks = [];
 

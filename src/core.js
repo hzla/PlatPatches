@@ -887,16 +887,32 @@ function align(value, boundary) {
   return (value + boundary - 1) & ~(boundary - 1);
 }
 
-function findAlignedZeroRun(data, size, alignment = 0x10) {
-  for (let offset = 0; offset <= data.length - size; offset = align(offset + 1, alignment)) {
-    let ok = true;
-    for (let i = 0; i < size; i += 1) {
-      if (data[offset + i] !== 0x00) {
-        ok = false;
-        break;
-      }
+const SYNTH_OVERLAY_RESERVED_RANGES = [
+  { start: 0x13000, end: 0x16000 },
+];
+
+function rangeOverlapsAny(start, end, ranges) {
+  return ranges.some((range) => start < range.end && end > range.start);
+}
+
+function isZeroRun(data, offset, size) {
+  if (offset < 0 || offset + size > data.length) {
+    return false;
+  }
+  for (let i = 0; i < size; i += 1) {
+    if (data[offset + i] !== 0x00) {
+      return false;
     }
-    if (ok) {
+  }
+  return true;
+}
+
+function findAlignedZeroRun(data, size, alignment = 0x10, reservedRanges = SYNTH_OVERLAY_RESERVED_RANGES) {
+  for (let offset = 0; offset <= data.length - size; offset = align(offset + 1, alignment)) {
+    if (
+      !rangeOverlapsAny(offset, offset + size, reservedRanges) &&
+      isZeroRun(data, offset, size)
+    ) {
       return offset;
     }
   }
@@ -1016,8 +1032,27 @@ class SyntheticOverlayAllocator {
     };
   }
 
-  allocate({ marker, buildPayload, label, alignment = 0x10, updateExisting = false }) {
+  allocate({
+    marker,
+    buildPayload,
+    label,
+    alignment = 0x10,
+    updateExisting = false,
+    preferredOffset = null,
+    preferredCapacity = null,
+    relocateExisting = false,
+  }) {
     const existing = this.findExisting(marker, buildPayload);
+    if (existing && relocateExisting && existing.markerOffset !== preferredOffset) {
+      return this.allocatePreferred({
+        marker,
+        buildPayload,
+        label,
+        preferredOffset,
+        preferredCapacity,
+        previousOffset: existing.markerOffset,
+      });
+    }
     if (existing) {
       if (existing.exact) {
         this.log.push(
@@ -1046,6 +1081,16 @@ class SyntheticOverlayAllocator {
         );
       }
       return { ...existing, reused: true };
+    }
+
+    if (preferredOffset !== null) {
+      return this.allocatePreferred({
+        marker,
+        buildPayload,
+        label,
+        preferredOffset,
+        preferredCapacity,
+      });
     }
 
     const provisional = buildPayload(SYNTH_OVERLAY_RAM_BASE);
@@ -1070,8 +1115,27 @@ class SyntheticOverlayAllocator {
     return { markerOffset, payloadRamAddress, built, payloadBytes, reused: false };
   }
 
-  async allocateAsync({ marker, buildPayload, label, alignment = 0x10, updateExisting = false }) {
+  async allocateAsync({
+    marker,
+    buildPayload,
+    label,
+    alignment = 0x10,
+    updateExisting = false,
+    preferredOffset = null,
+    preferredCapacity = null,
+    relocateExisting = false,
+  }) {
     const existing = await this.findExistingAsync(marker, buildPayload);
+    if (existing && relocateExisting && existing.markerOffset !== preferredOffset) {
+      return this.allocatePreferredAsync({
+        marker,
+        buildPayload,
+        label,
+        preferredOffset,
+        preferredCapacity,
+        previousOffset: existing.markerOffset,
+      });
+    }
     if (existing) {
       if (existing.exact) {
         this.log.push(
@@ -1102,6 +1166,16 @@ class SyntheticOverlayAllocator {
       return { ...existing, reused: true };
     }
 
+    if (preferredOffset !== null) {
+      return this.allocatePreferredAsync({
+        marker,
+        buildPayload,
+        label,
+        preferredOffset,
+        preferredCapacity,
+      });
+    }
+
     const provisional = await buildPayload(SYNTH_OVERLAY_RAM_BASE);
     const provisionalBytes = provisional.bytes || provisional;
     const markerOffset = findAlignedZeroRun(this.member, provisionalBytes.length, alignment);
@@ -1122,6 +1196,86 @@ class SyntheticOverlayAllocator {
       )}, ${hex(payloadBytes.length)} byte(s).`
     );
     return { markerOffset, payloadRamAddress, built, payloadBytes, reused: false };
+  }
+
+  allocatePreferred({
+    buildPayload,
+    label,
+    preferredOffset,
+    preferredCapacity,
+    previousOffset = null,
+  }) {
+    const payloadRamAddress = this.ramAddress(preferredOffset);
+    const built = buildPayload(payloadRamAddress);
+    const payloadBytes = built.bytes || built;
+    this.validatePreferredAllocation(label, preferredOffset, preferredCapacity, payloadBytes);
+    const patchedMember = new Uint8Array(this.member);
+    patchedMember.set(payloadBytes, preferredOffset);
+    replaceSyntheticOverlayMember(this.rom, patchedMember);
+    this.member = patchedMember;
+    this.logPreferredAllocation(label, preferredOffset, payloadRamAddress, payloadBytes.length, previousOffset);
+    return {
+      markerOffset: preferredOffset,
+      payloadRamAddress,
+      built,
+      payloadBytes,
+      reused: false,
+      relocated: previousOffset !== null,
+    };
+  }
+
+  async allocatePreferredAsync({
+    buildPayload,
+    label,
+    preferredOffset,
+    preferredCapacity,
+    previousOffset = null,
+  }) {
+    const payloadRamAddress = this.ramAddress(preferredOffset);
+    const built = await buildPayload(payloadRamAddress);
+    const payloadBytes = built.bytes || built;
+    this.validatePreferredAllocation(label, preferredOffset, preferredCapacity, payloadBytes);
+    const patchedMember = new Uint8Array(this.member);
+    patchedMember.set(payloadBytes, preferredOffset);
+    replaceSyntheticOverlayMember(this.rom, patchedMember);
+    this.member = patchedMember;
+    this.logPreferredAllocation(label, preferredOffset, payloadRamAddress, payloadBytes.length, previousOffset);
+    return {
+      markerOffset: preferredOffset,
+      payloadRamAddress,
+      built,
+      payloadBytes,
+      reused: false,
+      relocated: previousOffset !== null,
+    };
+  }
+
+  validatePreferredAllocation(label, preferredOffset, preferredCapacity, payloadBytes) {
+    if (!Number.isInteger(preferredOffset) || preferredOffset < 0) {
+      throw new PatchError(`${label} has an invalid preferred synthetic-overlay offset.`);
+    }
+    if (preferredCapacity !== null && payloadBytes.length > preferredCapacity) {
+      throw new PatchError(
+        `${label} payload is ${hex(payloadBytes.length)} byte(s), larger than its ${hex(
+          preferredCapacity
+        )}-byte synthetic-overlay reservation.`
+      );
+    }
+    if (!isZeroRun(this.member, preferredOffset, payloadBytes.length)) {
+      throw new PatchError(
+        `${label} reserved synthetic-overlay region at member ${hex(preferredOffset)} is already occupied.`
+      );
+    }
+  }
+
+  logPreferredAllocation(label, preferredOffset, payloadRamAddress, payloadLength, previousOffset) {
+    this.log.push(
+      `${label}: ${
+        previousOffset === null
+          ? "allocated reserved synthetic-overlay payload"
+          : `relocated synthetic-overlay payload from member ${hex(previousOffset)}`
+      } at member ${hex(preferredOffset)} / RAM ${hex(payloadRamAddress)}, ${hex(payloadLength)} byte(s).`
+    );
   }
 }
 

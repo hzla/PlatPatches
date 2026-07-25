@@ -205,6 +205,16 @@
     throw new Error("PlatinumPatcherTrainerClassPatches failed to load.");
   }
 
+  const variableTrainerPartyPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/variable-trainer-parties.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherVariableTrainerPartyPatches
+        : undefined;
+  if (!variableTrainerPartyPatches) {
+    throw new Error("PlatinumPatcherVariableTrainerPartyPatches failed to load.");
+  }
+
   const itemExpansionPatches =
     typeof module !== "undefined" && module.exports && typeof require === "function"
       ? require("./src/patches/item-expansion.js")(core)
@@ -272,6 +282,11 @@
   const EXTRA_TM_TABLE_OFFSET = 0x500;
   const EXTRA_TM_TABLE_MAX_ROWS = 60;
   const EXTRA_TM_PERSONAL_MASK_OFFSET = 0x28;
+  const EXPANDED_ITEM_PATCH_IDS = ["extraTMs", "natureMints", "bottleCaps"];
+  const EXPANDED_ITEM_PATCH_MARKERS = {
+    natureMints: "NATUREMINTV1",
+    bottleCaps: "BOTTLECAPV1",
+  };
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
   const SPECIES_NAMES_MESSAGE_MEMBER = 412;
   const TRAINER_CLASS_NAMES_MESSAGE_MEMBER = 619;
@@ -324,6 +339,7 @@
     natureStatColors: "Nature stat colors",
     customOverworldSprites: "Custom overworld sprites",
     trainerClassExpansion: "Trainer Class Expansion",
+    variableTrainerParties: "Variable Trainer Parties",
   };
   const APP_VERSION = "v61";
   const PATCH_INFO = {
@@ -394,6 +410,18 @@
         "Gender lookup: TrainerClass_Gender keeps its vanilla code but redirects its table literal to the expanded synthetic-overlay table.",
         "Payout lookup: the BattleScript_CalcPrizeMoney prize multiplier literal in active overlay 16 is redirected to the expanded synthetic-overlay table.",
         "Eye-contact BGM: Trainer_GetEncounterBGM is hooked so generated classes inherit the clone source's encounter music.",
+      ],
+    },
+    variableTrainerParties: {
+      title: "Variable Trainer Parties",
+      summary:
+        "Uses trainer item fields as alternate trpoke.narc member references. Each base party slot may be replaced by the same slot from an alternate file, with the alternate level field acting as a probability weight.",
+      regions: [
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker VARTRPTYV1.",
+        "Trainer data: poketool/trainer/trdata.narc item fields are optionally cleared globally, then configured trainers receive up to four alternate trpoke member references.",
+        "Trainer party loading: Trainer_LoadParty at ARM9 RAM 0x0207939C is hooked to perform bounded trpoke reads and slot-level variant selection during TrainerData_BuildParty.",
+        "Enemy trainer item use: the overlay 16 AI item import loop is skipped, so trainer item fields are no longer used as battle items.",
+        "Alternate rows: any nonzero trainer item field is treated as a trpoke member reference; the selected alternate Pokemon inherits the original slot's level after selection.",
       ],
     },
     shinyOdds: {
@@ -1203,6 +1231,7 @@
     { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
     { id: "customOverworldSprites", apply: overworldSpritePatches.customOverworldSprites },
     { id: "trainerClassExpansion", apply: trainerClassPatches.trainerClassExpansion },
+    { id: "variableTrainerParties", apply: variableTrainerPartyPatches.variableTrainerParties },
   ]);
 
   async function applySelectedPatches(inputBytes, patchIds, options = {}) {
@@ -1225,9 +1254,37 @@
     if (hasExpandedTmRows) {
       selected.add("extraTMs");
     }
+
+    let existingExtraTmState = null;
+    const retainedExpandedItemPatches = [];
+    if (EXPANDED_ITEM_PATCH_IDS.some((patchId) => selected.has(patchId))) {
+      if (romHasAsciiMarker(rom, "EXTRATMSV1")) {
+        existingExtraTmState = detectExtraTmState(rom);
+        if (existingExtraTmState.installed && !selected.has("extraTMs")) {
+          selected.add("extraTMs");
+          retainedExpandedItemPatches.push(PATCHES.extraTMs);
+        }
+      }
+      for (const [patchId, marker] of Object.entries(EXPANDED_ITEM_PATCH_MARKERS)) {
+        if (romHasAsciiMarker(rom, marker) && !selected.has(patchId)) {
+          selected.add(patchId);
+          retainedExpandedItemPatches.push(PATCHES[patchId]);
+        }
+      }
+    }
+
     const extraTmsUsesExpandedItems = selected.has("extraTMs");
+    const explicitExtraTmRows = Array.isArray(options.extraTms) ? options.extraTms : [];
+    const retainedExtraTmRows =
+      existingExtraTmState && existingExtraTmState.installed
+        ? existingExtraTmState.rows.slice(0, existingExtraTmState.rowCount).map((row) => ({
+            move: row.moveId || row.moveName || "Karate Chop",
+            compatiblePokemon: row.compatiblePokemon,
+          }))
+        : [];
     const effectiveOptions = {
       ...options,
+      extraTms: explicitExtraTmRows.length ? explicitExtraTmRows : retainedExtraTmRows,
       extraTmsAutoExpandedItems: extraTmsUsesExpandedItems,
       natureMintsAutoExpandedItems: selected.has("natureMints"),
       bottleCapsAutoExpandedItems: selected.has("bottleCaps"),
@@ -1253,6 +1310,7 @@
       selected.has("natureStatColors") ||
       selected.has("customOverworldSprites") ||
       selected.has("trainerClassExpansion") ||
+      selected.has("variableTrainerParties") ||
       selected.has("itemExpansion") ||
       selected.has("extraTMs") ||
       selected.has("natureMints") ||
@@ -1266,6 +1324,13 @@
     }
     if (debugFairyBattleTest) {
       selected.add("fairyPokemonTypes");
+    }
+    if (retainedExpandedItemPatches.length) {
+      log.push(
+        `Detected and retained installed expanded-item patch${
+          retainedExpandedItemPatches.length === 1 ? "" : "es"
+        }: ${retainedExpandedItemPatches.join(", ")}.`
+      );
     }
     effectiveOptions._selectedPatchIds = Array.from(selected);
     const effectivePatchIds = Array.from(selected);
@@ -1379,6 +1444,8 @@
               ? "customowsprites"
             : id === "trainerClassExpansion"
               ? "trainerclasses"
+            : id === "variableTrainerParties"
+              ? "variabletrainers"
             : id === "instantPartyHealing"
               ? "instanthealing"
             : id === "timeOfDayEvos"

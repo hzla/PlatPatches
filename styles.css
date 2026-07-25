@@ -448,6 +448,83 @@ input[type="file"] {
   min-height: 36px;
 }
 
+.variable-trainer-config {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.variable-trainer-config[hidden] {
+  display: none;
+}
+
+.variable-trainer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.variable-trainer-toolbar .patch-status {
+  margin-top: 0;
+}
+
+.variable-trainer-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.variable-trainer-row {
+  display: grid;
+  grid-template-columns: minmax(105px, 0.55fr) repeat(5, minmax(95px, 1fr)) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.variable-trainer-row-label {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.variable-trainer-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.variable-trainer-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.variable-trainer-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(35, 104, 162, 0.18);
+}
+
+.variable-trainer-remove {
+  min-height: 36px;
+}
+
 .item-expansion-config {
   display: grid;
   gap: 10px;
@@ -1168,6 +1245,10 @@ pre {
   }
 
   .trainer-class-row {
+    grid-template-columns: 1fr;
+  }
+
+  .variable-trainer-row {
     grid-template-columns: 1fr;
   }
 

@@ -50,6 +50,8 @@
 
   const MARKER_TEXT = "BOTTLECAPV1";
   const MARKER = asciiBytes(`${MARKER_TEXT}\0\0\0\0\0`);
+  const SYNTHETIC_OVERLAY_OFFSET = 0x15000;
+  const SYNTHETIC_OVERLAY_CAPACITY = 0x1000;
   const BOTTLE_CAP_COUNT = 7;
 
   const MESSAGE_NARC_PATH = "msgdata/pl_msg.narc";
@@ -280,6 +282,9 @@
       label: "Bottle Caps",
       alignment: 0x10,
       updateExisting: true,
+      preferredOffset: SYNTHETIC_OVERLAY_OFFSET,
+      preferredCapacity: SYNTHETIC_OVERLAY_CAPACITY,
+      relocateExisting: true,
     });
     const changedHooks = [];
 

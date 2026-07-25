@@ -273,6 +273,25 @@ input[type="file"] {
   cursor: pointer;
 }
 
+.patch-resource-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.patch-resource-link:hover {
+  color: var(--accent-dark);
+}
+
+.patch-resource-link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid rgba(35, 104, 162, 0.28);
+  outline-offset: 2px;
+}
+
 .patch-card strong,
 .patch-card small {
   display: block;

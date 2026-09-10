@@ -1140,8 +1140,18 @@ ${compatMaskWords}
     bagContextNewAddress,
     bagContextInitPocketAddress,
     pocketSortEmptyAddress,
+    bagPocketSizesAddress,
+    stringListNewAddress,
+    stringListAddFromMessageBankAddress,
+    stringListAddFromStringAddress,
+    loadTmHmMoveNameAddress,
+    loadItemNameAddress,
+    stringInitAddress,
+    stringFreeAddress,
     entries,
     maxRows = 128,
+    renderedItemPocketSize = 252,
+    vanillaItemPocketSize = 165,
   }) {
     const itemLoadAddress = helperAddress + 0x120;
     const tableAddress = helperAddress + 0x280;
@@ -1150,8 +1160,15 @@ ${compatMaskWords}
     const bagGetPocketForItemAddress = helperAddress + 0x860;
     const storageHelperAddress = helperAddress + 0x980;
     const medicineScratchBuilderAddress = helperAddress + 0xa40;
-    const tmhmScratchAddress = helperAddress + 0xc40;
-    const medicineScratchAddress = helperAddress + 0xec0;
+    const itemScratchBuilderAddress = helperAddress + 0xc40;
+    const bagLoadItemNamesAddress = helperAddress + 0xe00;
+    const bagInitItemNamesAddress = helperAddress + 0x1080;
+    const bagFreeItemNamesAddress = helperAddress + 0x1100;
+    const itemScratchAddress = helperAddress + 0x1200;
+    const tmhmScratchAddress = helperAddress + 0x1600;
+    const medicineScratchAddress = helperAddress + 0x1880;
+    const extraItemNamePointersAddress = helperAddress + 0x1920;
+    const extraItemNamePointerCount = renderedItemPocketSize - vanillaItemPocketSize;
     const paddedEntries = Array.from({ length: maxRows }, (_, index) =>
       index < entries.length
         ? entries[index]
@@ -1320,7 +1337,11 @@ ${compatMaskWords}
   beq @@ctx_battle_items
   b @@ctx_key_items
 @@ctx_items:
-  mov r1,r5
+  mov r0,r5
+  ldr r1,[sp]
+  bl ${hex32(itemScratchBuilderAddress)}
+  mov r1,r0
+  mov r2,0
   b @@ctx_init
 @@ctx_medicine:
   mov r0,r5
@@ -1722,6 +1743,349 @@ ${compatMaskWords}
   pop {r4,r5,r6,r7,pc}
   .pool
 
+.org ${hex32(itemScratchBuilderAddress)}
+  push {r4,r5,r6,r7,lr}
+  sub sp,16
+  str r0,[sp]
+  str r1,[sp,4]
+  ldr r4,=${hex32(itemScratchAddress)}
+  mov r0,r4
+  mov r1,0
+  ldr r2,=${hex32(renderedItemPocketSize * 4)}
+@@items_scratch_clear:
+  str r1,[r0]
+  add r0,4
+  sub r2,4
+  bne @@items_scratch_clear
+  bl ${hex32(storageHelperAddress)}
+  str r0,[sp,8]
+  mov r7,0
+  mov r5,0
+@@items_scan_overflow:
+  cmp r5,0x80
+  bcs @@items_copy_vanilla
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldrh r6,[r1]
+  cmp r6,0
+  beq @@items_next_overflow
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@items_next_overflow
+  mov r0,r6
+  bl ${hex32(itemIsTmHmAddress)}
+  cmp r0,0
+  bne @@items_next_overflow
+  ldr r0,=${hex32(firstItemId)}
+  cmp r6,r0
+  bcc @@items_next_overflow
+  sub r1,r6,r0
+  ldr r0,=${hex32(entries.length)}
+  cmp r1,r0
+  bcs @@items_next_overflow
+  ldr r0,=${hex32(pocketTableAddress)}
+  mov r2,r1
+  lsr r2,r2,1
+  ldrb r0,[r0,r2]
+  mov r2,1
+  tst r1,r2
+  beq @@items_low_nibble
+  lsr r0,r0,4
+@@items_low_nibble:
+  mov r1,0x0F
+  and r0,r1
+  cmp r0,0
+  bne @@items_next_overflow
+  ldr r0,=${hex32(renderedItemPocketSize)}
+  cmp r7,r0
+  bcs @@items_done
+  ldr r1,[sp,8]
+  lsl r2,r5,2
+  add r1,r1,r2
+  ldr r0,[r1]
+  lsl r2,r7,2
+  add r2,r4,r2
+  str r0,[r2]
+  add r7,1
+@@items_next_overflow:
+  add r5,1
+  b @@items_scan_overflow
+@@items_copy_vanilla:
+  ldr r5,[sp]
+  mov r6,0
+@@items_vanilla_loop:
+  ldr r0,=${hex32(renderedItemPocketSize)}
+  cmp r7,r0
+  bcs @@items_done
+  ldr r0,=${hex32(vanillaItemPocketSize)}
+  cmp r6,r0
+  bcs @@items_done
+  lsl r1,r6,2
+  add r1,r5,r1
+  ldrh r0,[r1]
+  cmp r0,0
+  beq @@items_next_vanilla
+  ldrh r2,[r1,2]
+  cmp r2,0
+  beq @@items_next_vanilla
+  ldr r0,[r1]
+  lsl r2,r7,2
+  add r2,r4,r2
+  str r0,[r2]
+  add r7,1
+@@items_next_vanilla:
+  add r6,1
+  b @@items_vanilla_loop
+@@items_done:
+  mov r0,r4
+  add sp,16
+  pop {r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(bagLoadItemNamesAddress)}
+  push {r3,r4,r5,r6,r7,lr}
+  mov r5,r0
+  add r0,0xC4
+  ldr r4,[r0]
+  mov r0,r4
+  add r0,0x64
+  ldrb r0,[r0]
+  mov r1,12
+  mul r0,r1
+  add r4,r0
+  add r4,4
+  ldrb r0,[r4,8]
+  ldr r1,=${hex32(bagPocketSizesAddress)}
+  ldrb r7,[r1,r0]
+  mov r0,r7
+  add r0,3
+  mov r1,6
+  bl ${hex32(stringListNewAddress)}
+  mov r1,0x58
+  lsl r1,r1,2
+  str r0,[r5,r1]
+  mov r2,0x20
+  ldr r0,[r5,r1]
+  sub r1,0x4C
+  ldr r1,[r5,r1]
+  mov r3,0x20
+  sub r3,0x23
+  bl ${hex32(stringListAddFromMessageBankAddress)}
+  mov r6,0
+  ldrb r0,[r4,8]
+  cmp r0,3
+  beq @@bag_names_tm_loop_test
+  b @@bag_names_item_loop_test
+@@bag_names_tm_loop:
+  ldr r0,[r4]
+  lsl r1,r6,2
+  add r0,r0,r1
+  ldrh r2,[r0]
+  cmp r2,0
+  beq @@bag_names_tm_done
+  ldrh r0,[r0,2]
+  cmp r0,0
+  beq @@bag_names_tm_done
+  mov r0,r5
+  mov r1,r6
+  bl @@bag_name_pointer
+  mov r1,r0
+  mov r0,0x12
+  lsl r0,r0,4
+  ldr r0,[r5,r0]
+  mov r3,6
+  bl ${hex32(loadTmHmMoveNameAddress)}
+  mov r0,0x58
+  lsl r0,r0,2
+  ldr r0,[r5,r0]
+  mov r1,r5
+  mov r2,0x59
+  lsl r2,r2,2
+  add r1,r1,r2
+  ldr r1,[r1]
+  mov r2,r6
+  bl ${hex32(stringListAddFromStringAddress)}
+  add r6,1
+@@bag_names_tm_loop_test:
+  cmp r6,r7
+  bcc @@bag_names_tm_loop
+@@bag_names_tm_done:
+  mov r2,0x20
+  mov r3,0x20
+  sub r3,0x22
+  bl @@bag_add_message
+  mov r2,0x20
+  mov r3,0x20
+  sub r3,0x23
+  bl @@bag_add_message
+  add r0,r6,3
+  strb r0,[r4,9]
+  pop {r3,r4,r5,r6,r7,pc}
+@@bag_names_item_loop:
+  ldr r0,[r4]
+  lsl r1,r6,2
+  add r0,r0,r1
+  ldrh r2,[r0]
+  cmp r2,0
+  beq @@bag_names_item_done
+  ldrh r0,[r0,2]
+  cmp r0,0
+  beq @@bag_names_item_done
+  mov r0,r5
+  mov r1,r6
+  bl @@bag_name_pointer
+  mov r1,r0
+  mov r0,0x47
+  lsl r0,r0,2
+  ldr r0,[r5,r0]
+  mov r3,6
+  bl ${hex32(loadItemNameAddress)}
+  mov r0,0x58
+  lsl r0,r0,2
+  ldr r0,[r5,r0]
+  mov r1,r5
+  mov r2,0x59
+  lsl r2,r2,2
+  add r1,r1,r2
+  ldr r1,[r1]
+  mov r2,r6
+  bl ${hex32(stringListAddFromStringAddress)}
+  add r6,1
+@@bag_names_item_loop_test:
+  cmp r6,r7
+  bcc @@bag_names_item_loop
+@@bag_names_item_done:
+  mov r0,r5
+  add r0,0xC4
+  ldr r0,[r0]
+  add r0,0x65
+  ldrb r0,[r0]
+  cmp r0,5
+  beq @@bag_names_poffin
+  ldrb r0,[r4,8]
+  cmp r0,4
+  bne @@bag_names_close
+  mov r2,0x20
+  b @@bag_names_cancel
+@@bag_names_close:
+  mov r2,0x29
+@@bag_names_cancel:
+  mov r3,r2
+  sub r3,0x2B
+  bl @@bag_add_message
+  mov r2,0x20
+  mov r3,0x20
+  sub r3,0x23
+  bl @@bag_add_message
+  add r0,r6,3
+  strb r0,[r4,9]
+  pop {r3,r4,r5,r6,r7,pc}
+@@bag_names_poffin:
+  mov r2,0x20
+  mov r3,0x20
+  sub r3,0x23
+  bl @@bag_add_message
+  add r0,r6,2
+  strb r0,[r4,9]
+  pop {r3,r4,r5,r6,r7,pc}
+@@bag_add_message:
+  push {r4,lr}
+  mov r0,0x58
+  lsl r0,r0,2
+  ldr r0,[r5,r0]
+  mov r1,0x45
+  lsl r1,r1,2
+  ldr r1,[r5,r1]
+  bl ${hex32(stringListAddFromMessageBankAddress)}
+  pop {r4,pc}
+@@bag_name_pointer:
+  ldr r2,=${hex32(vanillaItemPocketSize)}
+  cmp r1,r2
+  bcs @@bag_name_pointer_extra
+  lsl r1,r1,2
+  mov r2,0x59
+  lsl r2,r2,2
+  add r0,r0,r2
+  ldr r0,[r0,r1]
+  bx lr
+@@bag_name_pointer_extra:
+  sub r1,r1,r2
+  lsl r1,r1,2
+  ldr r0,=${hex32(extraItemNamePointersAddress)}
+  ldr r0,[r0,r1]
+  bx lr
+  .pool
+
+.org ${hex32(bagInitItemNamesAddress)}
+  push {r3,r4,r5,r6,r7,lr}
+  mov r5,r0
+  ldr r0,=${hex32(extraItemNamePointersAddress)}
+  mov r1,0
+  ldr r2,=${hex32(extraItemNamePointerCount * 4)}
+@@bag_init_clear_extra:
+  str r1,[r0]
+  add r0,4
+  sub r2,4
+  bne @@bag_init_clear_extra
+  mov r4,0
+@@bag_init_loop:
+  mov r0,18
+  mov r1,6
+  bl ${hex32(stringInitAddress)}
+  ldr r1,=${hex32(vanillaItemPocketSize)}
+  cmp r4,r1
+  bcs @@bag_init_extra
+  mov r2,0x59
+  lsl r2,r2,2
+  add r2,r5,r2
+  lsl r1,r4,2
+  str r0,[r2,r1]
+  b @@bag_init_next
+@@bag_init_extra:
+  sub r1,r4,r1
+  lsl r1,r1,2
+  ldr r2,=${hex32(extraItemNamePointersAddress)}
+  str r0,[r2,r1]
+@@bag_init_next:
+  add r4,1
+  ldr r0,=${hex32(renderedItemPocketSize)}
+  cmp r4,r0
+  bcc @@bag_init_loop
+  pop {r3,r4,r5,r6,r7,pc}
+  .pool
+
+.org ${hex32(bagFreeItemNamesAddress)}
+  push {r3,r4,r5,r6,r7,lr}
+  mov r5,r0
+  mov r4,0
+@@bag_free_loop:
+  ldr r1,=${hex32(vanillaItemPocketSize)}
+  cmp r4,r1
+  bcs @@bag_free_extra
+  mov r2,0x59
+  lsl r2,r2,2
+  add r2,r5,r2
+  lsl r1,r4,2
+  ldr r0,[r2,r1]
+  b @@bag_free_call
+@@bag_free_extra:
+  sub r1,r4,r1
+  lsl r1,r1,2
+  ldr r2,=${hex32(extraItemNamePointersAddress)}
+  ldr r0,[r2,r1]
+@@bag_free_call:
+  cmp r0,0
+  beq @@bag_free_next
+  bl ${hex32(stringFreeAddress)}
+@@bag_free_next:
+  add r4,1
+  ldr r0,=${hex32(renderedItemPocketSize)}
+  cmp r4,r0
+  bcc @@bag_free_loop
+  pop {r3,r4,r5,r6,r7,pc}
+  .pool
+
 .org ${hex32(tableAddress)}
   .halfword 0x${firstItemId.toString(16).toUpperCase().padStart(4, "0")}
   .halfword 0x${entries.length.toString(16).toUpperCase().padStart(4, "0")}
@@ -1732,11 +2096,17 @@ ${tableRows}
 .org ${hex32(pocketTableAddress)}
 ${pocketRows.join("\n")}
 
+.org ${hex32(itemScratchAddress)}
+  .fill 0x${(renderedItemPocketSize * 4).toString(16).toUpperCase().padStart(8, "0")}, 0xFD
+
 .org ${hex32(tmhmScratchAddress)}
   .fill 0x00000280, 0xFD
 
 .org ${hex32(medicineScratchAddress)}
   .fill 0x000000A0, 0xFD
+
+.org ${hex32(extraItemNamePointersAddress)}
+  .fill 0x${(extraItemNamePointerCount * 4).toString(16).toUpperCase().padStart(8, "0")}, 0xFD
 .close
 `;
   }
@@ -2714,6 +3084,476 @@ ${rows}
 `;
   }
 
+  function modernHeldItemsHelper({
+    helperAddress,
+    itemLookupReturnAddress,
+    damageReturnAddress,
+    rockyOnHitReturnAddress,
+    rockyPivotReturnAddress,
+    clearAmuletReturnAddress,
+    battlerHeldItemEffectAddress,
+    battlerAbilityAddress,
+    battlerSubstituteWasHitAddress,
+    battleSystemDivideAddress,
+    battleScriptIterAddress,
+    battleScriptReadAddress,
+    battleSystemNicknameTagAddress,
+    rngAddress,
+    multiHitRandomAddress,
+    multiHitContinueAddress,
+    rockyHelmetSubscript,
+    clearAmuletMessageId,
+    entries,
+    evolvableSpecies,
+    evioliteHoldEffect,
+    loadedDiceHoldEffect,
+    clearAmuletHoldEffect,
+    rockyHelmetHoldEffect,
+  }) {
+    const damageAddress = helperAddress + 0x100;
+    const loadedDiceAddress = helperAddress + 0x180;
+    const tableAddress = helperAddress + 0x200;
+    const rockyOnHitAddress = helperAddress + 0x280;
+    const rockyPivotAddress = helperAddress + 0x380;
+    const clearAmuletAddress = helperAddress + 0x480;
+    const evolvableTableAddress = helperAddress + 0x600;
+    const rows = entries
+      .map(
+        (entry) =>
+          `  .halfword 0x${entry.itemId.toString(16).toUpperCase().padStart(4, "0")}\n` +
+          `  .byte 0x${entry.holdEffect.toString(16).toUpperCase().padStart(2, "0")}, 0x${entry.holdEffectParam
+            .toString(16)
+            .toUpperCase()
+            .padStart(2, "0")}`
+      )
+      .join("\n");
+    const evolvableRows = [];
+    for (let offset = 0; offset < evolvableSpecies.length; offset += 16) {
+      evolvableRows.push(
+        `  .byte ${Array.from(evolvableSpecies.slice(offset, offset + 16))
+          .map((value) => `0x${value.toString(16).toUpperCase().padStart(2, "0")}`)
+          .join(", ")}`
+      );
+    }
+
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+.org ${hex32(helperAddress)}
+  push {r0-r7,lr}
+  cmp r2,1
+  beq @@lookup_param
+  cmp r2,2
+  bne @@lookup_fallback
+@@lookup_param:
+  ldr r3,=${hex32(tableAddress)}
+  ldrh r4,[r3]
+  add r3,2
+@@lookup_loop:
+  cmp r4,0
+  beq @@lookup_fallback
+  ldrh r5,[r3]
+  cmp r1,r5
+  beq @@lookup_hit
+  add r3,4
+  sub r4,1
+  b @@lookup_loop
+@@lookup_hit:
+  cmp r2,1
+  bne @@lookup_power
+  ldrb r0,[r3,2]
+  b @@lookup_return
+@@lookup_power:
+  ldrb r0,[r3,3]
+@@lookup_return:
+  str r0,[sp]
+  pop {r0-r7}
+  add sp,4
+  bx lr
+@@lookup_fallback:
+  pop {r0-r7}
+  pop {r3}
+  mov lr,r3
+  push {r3,r4,r5,lr}
+  mov r5,r0
+  mov r0,r1
+  mov r1,0
+  ldr r3,=${hex32(itemLookupReturnAddress | 1)}
+  bx r3
+  .pool
+
+.org ${hex32(damageAddress)}
+  ldr r0,[sp,0x28]
+  cmp r0,${evioliteHoldEffect}
+  bne @@damage_continue
+  ldr r0,[sp,0x54]
+  ldr r1,=${hex32(evolvableSpecies.length)}
+  cmp r0,r1
+  bcs @@damage_continue
+  ldr r1,=${hex32(evolvableTableAddress)}
+  ldrb r0,[r1,r0]
+  cmp r0,0
+  beq @@damage_continue
+  ldr r0,[sp,0x78]
+  lsr r1,r0,1
+  add r0,r1
+  str r0,[sp,0x78]
+  ldr r0,[sp,0x10]
+  lsr r1,r0,1
+  add r0,r1
+  str r0,[sp,0x10]
+@@damage_continue:
+  ldr r1,[sp,0x24]
+  ldr r2,[sp,0x20]
+  mov r0,r5
+  ldr r3,=${hex32(damageReturnAddress | 1)}
+  mov lr,r3
+  mov r3,0x2F
+  bx lr
+  .pool
+
+.org ${hex32(loadedDiceAddress)}
+  cmp r0,0x5C
+  beq @@multi_skill_link
+  cmp r0,0x67
+  beq @@multi_random
+  ldr r1,[r5,0x64]
+  mov r2,0xC0
+  mul r1,r2
+  add r1,r5
+  ldr r2,=0x00002DCC
+  ldr r3,[r1,r2]
+  lsl r3,r3,10
+  lsr r3,r3,29
+  cmp r3,0
+  bne @@multi_random
+  sub r2,20
+  ldrh r1,[r1,r2]
+  mov r0,r5
+  mov r2,1
+  ldr r3,=${hex32(helperAddress | 1)}
+  blx r3
+  cmp r0,${loadedDiceHoldEffect}
+  bne @@multi_random
+  mov r0,r6
+  ldr r3,=${hex32(rngAddress | 1)}
+  blx r3
+  mov r1,1
+  and r0,r1
+  add r0,4
+  mov r4,r0
+  b @@multi_continue
+@@multi_skill_link:
+  mov r4,5
+@@multi_continue:
+  ldr r3,=${hex32(multiHitContinueAddress | 1)}
+  bx r3
+@@multi_random:
+  ldr r3,=${hex32(multiHitRandomAddress | 1)}
+  bx r3
+  .pool
+
+.org ${hex32(tableAddress)}
+  .halfword 0x${entries.length.toString(16).toUpperCase().padStart(4, "0")}
+${rows}
+
+.org ${hex32(rockyOnHitAddress)}
+  push {r4-r7,lr}
+  sub sp,4
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  ldr r1,[r5,0x6C]
+  cmp r1,0xFF
+  beq @@rocky_hit_fallback
+  mov r0,r5
+  ldr r3,=${hex32(battlerSubstituteWasHitAddress | 1)}
+  blx r3
+  cmp r0,1
+  beq @@rocky_hit_fallback
+  ldr r3,=0x00002140
+  ldr r0,[r5,r3]
+  mov r1,0x10
+  tst r0,r1
+  bne @@rocky_hit_fallback
+  bl @@rocky_hit_check
+  cmp r0,0
+  beq @@rocky_hit_fallback
+  mov r0,1
+  add sp,4
+  pop {r4-r7,pc}
+@@rocky_hit_fallback:
+  mov r0,r4
+  mov r1,r5
+  mov r2,r6
+  add sp,4
+  pop {r4-r7}
+  pop {r3}
+  mov lr,r3
+  push {r4-r7,lr}
+  sub sp,12
+  mov r5,r1
+  ldr r1,[r5,0x6C]
+  ldr r3,=${hex32(rockyOnHitReturnAddress | 1)}
+  bx r3
+@@rocky_hit_check:
+  mov r7,lr
+  ldr r1,[r5,0x6C]
+  mov r0,r5
+  ldr r3,=${hex32(battlerHeldItemEffectAddress | 1)}
+  blx r3
+  cmp r0,${rockyHelmetHoldEffect}
+  bne @@rocky_hit_no
+  ldr r1,[r5,0x64]
+  mov r0,0xC0
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x00002D8C
+  ldr r0,[r2,r3]
+  cmp r0,0
+  beq @@rocky_hit_no
+  mov r0,r5
+  ldr r3,=${hex32(battlerAbilityAddress | 1)}
+  blx r3
+  cmp r0,98
+  beq @@rocky_hit_no
+  ldr r1,[r5,0x6C]
+  mov r0,28
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x000002D8
+  ldr r0,[r2,r3]
+  cmp r0,0
+  bne @@rocky_hit_contact
+  add r3,8
+  ldr r0,[r2,r3]
+  cmp r0,0
+  beq @@rocky_hit_no
+@@rocky_hit_contact:
+  ldr r3,=0x00003044
+  ldr r0,[r5,r3]
+  lsl r0,r0,4
+  add r1,r5,r0
+  ldr r3,=0x000003E9
+  ldrb r0,[r1,r3]
+  mov r1,1
+  tst r0,r1
+  beq @@rocky_hit_no
+  ldr r1,[r5,0x64]
+  mov r0,0xC0
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x00002D90
+  ldr r0,[r2,r3]
+  neg r0,r0
+  mov r1,6
+  ldr r3,=${hex32(battleSystemDivideAddress | 1)}
+  blx r3
+  cmp r0,0
+  bne @@rocky_hit_store
+  mov r0,0
+  mvn r0,r0
+@@rocky_hit_store:
+  ldr r3,=0x0000215C
+  str r0,[r5,r3]
+  ldr r0,=${hex32(rockyHelmetSubscript)}
+  str r0,[r6]
+  mov r0,1
+  bx r7
+@@rocky_hit_no:
+  mov r0,0
+  bx r7
+  .pool
+
+.org ${hex32(rockyPivotAddress)}
+  push {r4-r7,lr}
+  sub sp,4
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  bl @@rocky_pivot_check
+  cmp r0,0
+  beq @@rocky_pivot_fallback
+  mov r0,1
+  add sp,4
+  pop {r4-r7,pc}
+@@rocky_pivot_fallback:
+  mov r0,r4
+  mov r1,r5
+  mov r2,r6
+  add sp,4
+  pop {r4-r7}
+  pop {r3}
+  mov lr,r3
+  push {r4-r7,lr}
+  sub sp,20
+  mov r5,r1
+  ldr r1,[r5,0x64]
+  ldr r3,=${hex32(rockyPivotReturnAddress | 1)}
+  bx r3
+@@rocky_pivot_check:
+  mov r7,lr
+  ldr r1,[r5,0x6C]
+  cmp r1,0xFF
+  beq @@rocky_pivot_no
+  mov r0,r5
+  ldr r3,=${hex32(battlerHeldItemEffectAddress | 1)}
+  blx r3
+  cmp r0,${rockyHelmetHoldEffect}
+  bne @@rocky_pivot_no
+  ldr r1,[r5,0x64]
+  mov r0,0xC0
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x00002D8C
+  ldr r0,[r2,r3]
+  cmp r0,0
+  beq @@rocky_pivot_no
+  mov r0,r5
+  ldr r3,=${hex32(battlerAbilityAddress | 1)}
+  blx r3
+  cmp r0,98
+  beq @@rocky_pivot_no
+  ldr r1,[r5,0x6C]
+  mov r0,28
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x000002D8
+  ldr r0,[r2,r3]
+  cmp r0,0
+  bne @@rocky_pivot_contact
+  add r3,8
+  ldr r0,[r2,r3]
+  cmp r0,0
+  beq @@rocky_pivot_no
+@@rocky_pivot_contact:
+  ldr r3,=0x00003044
+  ldr r0,[r5,r3]
+  lsl r0,r0,4
+  add r1,r5,r0
+  ldr r3,=0x000003E9
+  ldrb r0,[r1,r3]
+  mov r1,1
+  tst r0,r1
+  beq @@rocky_pivot_no
+  ldr r1,[r5,0x64]
+  mov r0,0xC0
+  mul r0,r1
+  add r2,r5,r0
+  ldr r3,=0x00002D90
+  ldr r0,[r2,r3]
+  neg r0,r0
+  mov r1,6
+  ldr r3,=${hex32(battleSystemDivideAddress | 1)}
+  blx r3
+  cmp r0,0
+  bne @@rocky_pivot_store
+  mov r0,0
+  mvn r0,r0
+@@rocky_pivot_store:
+  ldr r3,=0x0000215C
+  str r0,[r5,r3]
+  ldr r0,=${hex32(rockyHelmetSubscript)}
+  str r0,[r6]
+  mov r0,1
+  bx r7
+@@rocky_pivot_no:
+  mov r0,0
+  bx r7
+  .pool
+
+.org ${hex32(clearAmuletAddress)}
+  push {r4-r7,lr}
+  sub sp,4
+  mov r4,r0
+  mov r5,r1
+  ldr r3,=0x0000008C
+  ldr r0,[r5,r3]
+  cmp r0,22
+  blo @@clear_fallback
+  cmp r0,39
+  blo @@clear_check_prevention
+  cmp r0,46
+  blo @@clear_fallback
+@@clear_check_prevention:
+  ldr r3,=0x00000090
+  ldr r0,[r5,r3]
+  mov r1,2
+  lsl r1,r1,26
+  tst r0,r1
+  bne @@clear_fallback
+  ldr r6,[r5,0x64]
+  ldr r3,=0x00000094
+  ldr r7,[r5,r3]
+  cmp r6,r7
+  beq @@clear_fallback
+  mov r0,r5
+  mov r1,r7
+  ldr r3,=${hex32(battlerHeldItemEffectAddress | 1)}
+  blx r3
+  cmp r0,${clearAmuletHoldEffect}
+  bne @@clear_fallback
+  mov r0,r5
+  mov r1,1
+  ldr r3,=${hex32(battleScriptIterAddress | 1)}
+  blx r3
+  mov r0,r5
+  ldr r3,=${hex32(battleScriptReadAddress | 1)}
+  blx r3
+  mov r6,r0
+  mov r0,r5
+  ldr r3,=${hex32(battleScriptReadAddress | 1)}
+  blx r3
+  mov r0,r5
+  ldr r3,=${hex32(battleScriptReadAddress | 1)}
+  blx r3
+  ldr r3,=0x000000F6
+  ldr r0,=${hex32(clearAmuletMessageId)}
+  strh r0,[r5,r3]
+  sub r3,1
+  mov r0,15
+  strb r0,[r5,r3]
+  mov r0,r5
+  mov r1,r7
+  ldr r3,=${hex32(battleSystemNicknameTagAddress | 1)}
+  blx r3
+  ldr r3,=0x000000F8
+  str r0,[r5,r3]
+  mov r0,0xC0
+  mul r0,r7
+  add r1,r5,r0
+  ldr r3,=0x00002DB8
+  ldrh r0,[r1,r3]
+  ldr r3,=0x000000FC
+  str r0,[r5,r3]
+  mov r0,r5
+  mov r1,r6
+  ldr r3,=${hex32(battleScriptIterAddress | 1)}
+  blx r3
+  mov r0,0
+  add sp,4
+  pop {r4-r7,pc}
+@@clear_fallback:
+  mov r0,r4
+  mov r1,r5
+  add sp,4
+  pop {r4-r7}
+  pop {r3}
+  mov lr,r3
+  push {r3-r7,lr}
+  sub sp,24
+  str r0,[sp]
+  mov r0,0xB5
+  ldr r3,=${hex32(clearAmuletReturnAddress | 1)}
+  bx r3
+  .pool
+
+.org ${hex32(evolvableTableAddress)}
+${evolvableRows.join("\n")}
+.close
+`;
+  }
+
   return {
     bottleCapsHelper,
     extraTmsHelper,
@@ -2727,6 +3567,7 @@ ${rows}
     modernConfusionHelper,
     frostbiteHelper,
     modernFreezeHelper,
+    modernHeldItemsHelper,
     modernParalysisThunderWaveHelper,
     modernSleepHelper,
     natureMintsHelper,

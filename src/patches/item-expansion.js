@@ -21,14 +21,19 @@
   }
 
   const {
+    DSPRE_SYNTH_OVERLAY_SIZE,
+    OVERLAY_84,
     PatchError,
+    SYNTH_OVERLAY_RAM_BASE,
     SyntheticOverlayAllocator,
     arm9Offset,
     asciiBytes,
     bytesEqual,
     bytesFromHex,
     findFileByPath,
+    findNeedle,
     getArm9Info,
+    getOverlayRange,
     hex,
     messageBankEntries,
     narcMemberBytes,
@@ -38,13 +43,15 @@
     replaceMessageBankEntries,
     replaceNarcMembers,
     replaceRomFileAllowGrowth,
+    readSyntheticOverlayMember,
     requireBytes,
     writeBytes,
     writeU16,
     writeU32,
   } = core;
 
-  const MARKER_TEXT = "ITEMEXPV1";
+  const MARKER_TEXT = "ITEMEXPV2";
+  const LEGACY_MARKER_TEXT = "ITEMEXPV1";
   const MARKER = asciiBytes(`${MARKER_TEXT}\0\0\0\0\0\0\0`);
   const FIRST_EXPANDED_ITEM_ID = 468;
   const MAX_VANILLA_ITEM_ID = 467;
@@ -83,9 +90,45 @@
   const SAVE_DATA_SET_CHECKSUM_RAM = 0x02025c84;
   const OVERFLOW_STORAGE_SAVE_TABLE_ID = 30; // SAVE_TABLE_ENTRY_WIFI_HISTORY
   const OVERFLOW_STORAGE_OFFSET = 0x0cfc; // Last 0x300 bytes before Wi-Fi History checksum.
+  const SYNTHETIC_OVERLAY_OFFSET = 0x10000;
+  const SYNTHETIC_OVERLAY_CAPACITY = 0x2000;
   const BAG_CONTEXT_NEW_RAM = 0x0207cb08;
   const BAG_CONTEXT_INIT_POCKET_RAM = 0x0207cb48;
   const POCKET_SORT_EMPTY_RAM = 0x0207d780;
+  const BAG_POCKET_SIZES_RAM = 0x02241118;
+  const BAG_LOAD_CURRENT_POCKET_NAMES_RAM = 0x0223bfbc;
+  const BAG_INIT_ITEM_NAME_BUFFERS_RAM = 0x0223c158;
+  const BAG_FREE_ITEM_NAME_BUFFERS_RAM = 0x0223c178;
+  const STRING_LIST_NEW_RAM = 0x02013a04;
+  const STRING_LIST_ADD_FROM_MESSAGE_BANK_RAM = 0x02013a4c;
+  const STRING_LIST_ADD_FROM_STRING_RAM = 0x02013a6c;
+  const BAG_LOAD_TMHM_MOVE_NAME_RAM = 0x0223be94;
+  const BAG_LOAD_ITEM_NAME_RAM = 0x0223be84;
+  const STRING_INIT_RAM = 0x02023790;
+  const STRING_FREE_RAM = 0x020237bc;
+  const RENDERED_ITEM_POCKET_SIZE = 252;
+  const VANILLA_ITEM_POCKET_SIZE = 165;
+
+  const BAG_UI_HOOK_SITES = [
+    {
+      label: "LoadCurrentPocketItemNames",
+      ram: BAG_LOAD_CURRENT_POCKET_NAMES_RAM,
+      entryKey: "bagLoadItemNamesAddress",
+      original: bytesFromHex("f8 b5 82 b0 05 1c c4 30"),
+    },
+    {
+      label: "InitItemNameBuffers",
+      ram: BAG_INIT_ITEM_NAME_BUFFERS_RAM,
+      entryKey: "bagInitItemNamesAddress",
+      original: bytesFromHex("f8 b5 59 26 05 1c 00 24"),
+    },
+    {
+      label: "FreeItemNameBuffers",
+      ram: BAG_FREE_ITEM_NAME_BUFFERS_RAM,
+      entryKey: "bagFreeItemNamesAddress",
+      original: bytesFromHex("70 b5 59 26 05 1c 00 24"),
+    },
+  ];
 
   const NATURE_NAMES = [
     "Hardy",
@@ -162,6 +205,57 @@
     { name: "Speed Cap", statName: "Speed", targetParam: 73, paletteKey: "bottle" },
     { name: "HP Cap", statName: "HP", targetParam: 70, paletteKey: "bottle" },
     { name: "Gold Cap", statName: "all stats", targetParam: 0xff, paletteKey: "gold" },
+  ];
+  const ITEM_NUGGET = 0x5c;
+  const ITEM_CLEANSE_TAG = 0xe0;
+  const ITEM_EVERSTONE = 0xe5;
+  const ITEM_HARD_STONE = 0xee;
+  const ITEM_METRONOME = 0x115;
+  const MODERN_HELD_ITEM_DEFS = [
+    {
+      kind: "eviolite",
+      cloneFrom: ITEM_NUGGET,
+      iconFrom: ITEM_EVERSTONE,
+      name: "Eviolite",
+      article: "an {COLOR 255}Eviolite{COLOR 0}",
+      plural: "Eviolites",
+      description: "A mysterious evolutionary lump.\nIt raises Defense and Sp. Def.",
+      holdEffect: 152,
+      holdEffectParam: 0,
+    },
+    {
+      kind: "loadedDice",
+      cloneFrom: ITEM_NUGGET,
+      iconFrom: ITEM_METRONOME,
+      name: "Loaded Dice",
+      article: "some {COLOR 255}Loaded Dice{COLOR 0}",
+      plural: "Loaded Dice",
+      description: "Loaded dice that favor moves\nwhich strike multiple times.",
+      holdEffect: 153,
+      holdEffectParam: 0,
+    },
+    {
+      kind: "clearAmulet",
+      cloneFrom: ITEM_NUGGET,
+      iconFrom: ITEM_CLEANSE_TAG,
+      name: "Clear Amulet",
+      article: "a {COLOR 255}Clear Amulet{COLOR 0}",
+      plural: "Clear Amulets",
+      description: "An amulet that protects its holder\nfrom stat reductions by foes.",
+      holdEffect: 154,
+      holdEffectParam: 0,
+    },
+    {
+      kind: "rockyHelmet",
+      cloneFrom: ITEM_NUGGET,
+      iconFrom: ITEM_HARD_STONE,
+      name: "Rocky Helmet",
+      article: "a {COLOR 255}Rocky Helmet{COLOR 0}",
+      plural: "Rocky Helmets",
+      description: "A helmet that damages attackers\nthat make direct contact.",
+      holdEffect: 155,
+      holdEffectParam: 0,
+    },
   ];
   const BOTTLE_CAP_ICON_NCGR_BASE64 =
     "UkdDTv/+AQEwAgAAEAABAFJBSEMgAgAA/////wMAAAAQAAAAAAAAAAACAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACQAAAAOQAAkEMAAAAAAAAAAAAAAAAAAAAAkJmZADlCMpkkFCQ0QRFBQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkAAACTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlCAABZQgAAWUIAAFkxAABZFAAAiUcAAJBIAAAAWTERMUETMRFDMRQ0QRQxETRDREQTISIiQUdXV1hHV1hYYgkAAFIJAABSCQAAUQkAAFQJAACHCQAAmAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWYd4mZCZmQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
@@ -512,6 +606,17 @@
     }));
   }
 
+  function autoModernHeldItemRows(options = {}) {
+    if (!options.modernHeldItemsAutoExpandedItems) {
+      return [];
+    }
+    return MODERN_HELD_ITEM_DEFS.map((def) => ({
+      ...def,
+      source: "modernHeldItems",
+      heldItemKind: def.kind,
+    }));
+  }
+
   function normalizedExpandedItemRows(options = {}, rom) {
     const manualRows = rowSources(options.expandedItems).map((row) => ({ ...row, source: "manual" }));
     const hasManualTmRows = manualRows.some((row) => isTruthy(row.isTm));
@@ -520,6 +625,7 @@
       ...(rom && options.extraTmsAutoExpandedItems && !hasManualTmRows ? autoExtraTmRows(rom, options) : []),
       ...autoNatureMintRows(options),
       ...autoBottleCapRows(options),
+      ...autoModernHeldItemRows(options),
     ];
     if (rows.length < 1 || rows.length > MAX_EXPANDED_ITEMS) {
       throw new PatchError(`Item Expansion needs 1-${MAX_EXPANDED_ITEMS} configured item row(s).`);
@@ -608,6 +714,9 @@
         targetParam: row.targetParam,
         statName: row.statName,
         paletteKey: row.paletteKey,
+        heldItemKind: row.heldItemKind,
+        holdEffect: row.holdEffect,
+        holdEffectParam: row.holdEffectParam,
         dataMember: row.dataMember,
         iconMember: row.iconMember,
         paletteMember: row.paletteMember,
@@ -654,6 +763,18 @@
         targetParam: row.targetParam,
         statName: row.statName,
         name: row.name,
+      }));
+  }
+
+  function expandedModernHeldItemEntries(rom, options = {}) {
+    return normalizedExpandedItemRows(options, rom)
+      .filter((row) => row.source === "modernHeldItems")
+      .map((row) => ({
+        itemId: row.itemId,
+        name: row.name,
+        kind: row.heldItemKind,
+        holdEffect: row.holdEffect,
+        holdEffectParam: row.holdEffectParam,
       }));
   }
 
@@ -731,8 +852,18 @@
           bagContextNewAddress: BAG_CONTEXT_NEW_RAM,
           bagContextInitPocketAddress: BAG_CONTEXT_INIT_POCKET_RAM,
           pocketSortEmptyAddress: POCKET_SORT_EMPTY_RAM,
+          bagPocketSizesAddress: BAG_POCKET_SIZES_RAM,
+          stringListNewAddress: STRING_LIST_NEW_RAM,
+          stringListAddFromMessageBankAddress: STRING_LIST_ADD_FROM_MESSAGE_BANK_RAM,
+          stringListAddFromStringAddress: STRING_LIST_ADD_FROM_STRING_RAM,
+          loadTmHmMoveNameAddress: BAG_LOAD_TMHM_MOVE_NAME_RAM,
+          loadItemNameAddress: BAG_LOAD_ITEM_NAME_RAM,
+          stringInitAddress: STRING_INIT_RAM,
+          stringFreeAddress: STRING_FREE_RAM,
           entries: archiveEntries,
           maxRows: MAX_EXPANDED_ITEMS,
+          renderedItemPocketSize: RENDERED_ITEM_POCKET_SIZE,
+          vanillaItemPocketSize: VANILLA_ITEM_POCKET_SIZE,
         }),
       });
     } catch (error) {
@@ -748,11 +879,94 @@
       itemLoadAddress: helperAddress + 0x120,
       bagContextCreateAddress: helperAddress + 0x700,
       bagGetPocketForItemAddress: helperAddress + 0x860,
+      bagLoadItemNamesAddress: helperAddress + 0xe00,
+      bagInitItemNamesAddress: helperAddress + 0x1080,
+      bagFreeItemNamesAddress: helperAddress + 0x1100,
       tableAddress: helperAddress + 0x280,
     };
   }
 
+  function isSyntheticOverlayHook(data, offset, preserveR3 = false) {
+    let target;
+    if (preserveR3) {
+      if (readU32(data, offset) !== 0x4b01b508 || readU32(data, offset + 4) !== 0xbd089301) {
+        return false;
+      }
+      target = readU32(data, offset + 8) & ~1;
+    } else {
+      if (readU32(data, offset) !== 0x47184b00) {
+        return false;
+      }
+      target = readU32(data, offset + 4) & ~1;
+    }
+    return target >= SYNTH_OVERLAY_RAM_BASE && target < SYNTH_OVERLAY_RAM_BASE + DSPRE_SYNTH_OVERLAY_SIZE;
+  }
+
+  function hasSyntheticOverlayMarker(rom, marker) {
+    try {
+      const member = readSyntheticOverlayMember(rom).member;
+      return findNeedle(member, asciiBytes(marker), 0, member.length).length > 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function patchItemExpansionBagPocketSize(rom, log) {
+    const overlay = getOverlayRange(rom, OVERLAY_84);
+    const offset = overlay.start + BAG_POCKET_SIZES_RAM - overlay.loadAddress;
+    const current = rom.slice(offset, offset + 8);
+    const validTail =
+      current[1] === 0x28 &&
+      current[2] === 0x0f &&
+      (current[3] === 0x64 || current[3] === 0xa0) &&
+      bytesEqual(current, 4, bytesFromHex("40 0c 1e 32"));
+    if (!validTail || (current[0] !== VANILLA_ITEM_POCKET_SIZE && current[0] !== RENDERED_ITEM_POCKET_SIZE)) {
+      throw new PatchError(
+        `Item Expansion Items-pocket rendered-size table sanity check failed at overlay 84 RAM ${hex(
+          BAG_POCKET_SIZES_RAM
+        )}.`
+      );
+    }
+    if (current[0] === RENDERED_ITEM_POCKET_SIZE) {
+      log.push(`Item Expansion: Items-pocket rendered capacity is already ${RENDERED_ITEM_POCKET_SIZE}.`);
+      return;
+    }
+    rom[offset] = RENDERED_ITEM_POCKET_SIZE;
+    log.push(
+      `Item Expansion: expanded the overlay 84 Items-pocket rendered capacity from ${VANILLA_ITEM_POCKET_SIZE} to ${RENDERED_ITEM_POCKET_SIZE}.`
+    );
+  }
+
+  function patchItemExpansionBagUiHooks(rom, force, log, built) {
+    const overlay = getOverlayRange(rom, OVERLAY_84);
+    const changed = [];
+    for (const hook of BAG_UI_HOOK_SITES) {
+      const offset = overlay.start + hook.ram - overlay.loadAddress;
+      const patched = thumbAbsoluteBranch(built[hook.entryKey]);
+      let state;
+      try {
+        state = requireBytes(rom, offset, hook.original, patched, force, `Item Expansion ${hook.label} hook`);
+      } catch (error) {
+        if (!isSyntheticOverlayHook(rom, offset)) {
+          throw error;
+        }
+        state = "legacy";
+      }
+      if (state !== "already") {
+        writeBytes(rom, offset, patched);
+        changed.push(state === "legacy" ? `${hook.label} migrated` : hook.label);
+      }
+    }
+    patchItemExpansionBagPocketSize(rom, log);
+    log.push(
+      `Item Expansion: ${
+        changed.length ? `installed ${changed.join(", ")} bag UI hook(s)` : "overflow-aware Items-pocket UI hooks already installed"
+      }.`
+    );
+  }
+
   async function patchItemExpansionArm9Hooks(rom, force, log, archiveEntries) {
+    const legacyPayloadPresent = hasSyntheticOverlayMarker(rom, LEGACY_MARKER_TEXT);
     const allocator = new SyntheticOverlayAllocator(rom, log);
     const allocation = await allocator.allocateAsync({
       marker: MARKER_TEXT,
@@ -760,6 +974,9 @@
       label: "Item Expansion",
       alignment: 0x10,
       updateExisting: true,
+      preferredOffset: SYNTHETIC_OVERLAY_OFFSET,
+      preferredCapacity: SYNTHETIC_OVERLAY_CAPACITY,
+      relocateExisting: true,
     });
     const changedHooks = [];
 
@@ -772,11 +989,28 @@
       const state =
         legacyPatched && bytesEqual(rom, offset, legacyPatched)
           ? "patch"
-          : requireBytes(rom, offset, hook.original, patched, force, `Item Expansion ${hook.label} hook`);
+          : (() => {
+              try {
+                return requireBytes(rom, offset, hook.original, patched, force, `Item Expansion ${hook.label} hook`);
+              } catch (error) {
+                if (!isSyntheticOverlayHook(rom, offset, hook.preserveR3)) {
+                  throw error;
+                }
+                return "legacy";
+              }
+            })();
       if (state !== "already") {
         writeBytes(rom, offset, patched);
-        changedHooks.push(hook.label);
+        changedHooks.push(state === "legacy" ? `${hook.label} migrated` : hook.label);
       }
+    }
+
+    patchItemExpansionBagUiHooks(rom, force, log, allocation.built);
+
+    if (legacyPayloadPresent) {
+      log.push(
+        "Item Expansion: migrated ITEMEXPV1 ROM hooks to ITEMEXPV2; existing ITEMBAG2 save rows remain valid without conversion."
+      );
     }
 
     log.push(
@@ -1143,6 +1377,7 @@
     expandedExtraTmEntries,
     expandedNatureMintEntries,
     expandedBottleCapEntries,
+    expandedModernHeldItemEntries,
     extraTmsExpandedCountOption,
     readMoveNames,
     manualExpandedItemCount,

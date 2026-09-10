@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pokemon Platinum ROM Patcher</title>
-    <link rel="stylesheet" href="./styles.css?v=61" />
+    <link rel="stylesheet" href="./styles.css?v=63" />
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,7 @@
           <p class="eyebrow">US Pokemon Platinum</p>
           <h1>ROM Patcher</h1>
         </div>
-        <div class="status-pill" id="romStatus">No ROM loaded · v61</div>
+        <div class="status-pill" id="romStatus">No ROM loaded · v63</div>
       </section>
 
       <section class="panel upload-panel">
@@ -179,6 +179,14 @@
                 <span>
                   <strong>Modern Steel Type</strong>
                   <small>Ghost and Dark hit Steel neutrally.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
+                <input type="checkbox" value="modernHeldItems" />
+                <span>
+                  <strong>Modern Held Items</strong>
+                  <small>Adds Eviolite, Loaded Dice, Clear Amulet, and Rocky Helmet.</small>
                 </span>
               </label>
 
@@ -427,6 +435,15 @@
               </label>
 
               <label class="patch-card">
+                <input type="checkbox" value="battleLog" />
+                <span>
+                  <strong>Battle Log</strong>
+                  <small>Records trainer teams, held items, movesets, and KO credit; summary ID No. becomes family Frags.</small>
+                  <small class="patch-status missing">Uses the three downloaded Battle Recording slots. My Recording is preserved.</small>
+                </span>
+              </label>
+
+              <label class="patch-card">
                 <input id="natureMintsPatch" type="checkbox" value="natureMints" />
                 <span>
                   <strong>Nature Mints</strong>
@@ -596,35 +613,39 @@
       </dialog>
     </main>
 
-    <script src="./src/core.js?v=61"></script>
-    <script src="./src/patches/registry.js?v=61"></script>
-    <script src="./src/patches/infrastructure.js?v=61"></script>
-    <script src="./src/patches/simple-sites.js?v=61"></script>
-    <script src="./src/patches/fairy-type.js?v=61"></script>
-    <script src="./src/patches/modern-type-chart.js?v=61"></script>
-    <script src="./vendor/armips/armips.js?v=61"></script>
-    <script src="./src/asm/armips-assembler.js?v=61"></script>
-    <script src="./src/asm/templates.js?v=61"></script>
-    <script src="./src/patches/infinite-candy.js?v=61"></script>
-    <script src="./src/patches/item-renewal.js?v=61"></script>
-    <script src="./src/patches/text-speed.js?v=61"></script>
-    <script src="./src/patches/modern-status.js?v=61"></script>
-    <script src="./src/patches/battle-critical.js?v=61"></script>
-    <script src="./src/patches/rng-generation.js?v=61"></script>
-    <script src="./src/patches/wild-natures.js?v=61"></script>
-    <script src="./src/patches/battle-weather.js?v=61"></script>
-    <script src="./src/patches/frame-rate.js?v=61"></script>
-    <script src="./src/patches/field-movement.js?v=61"></script>
-    <script src="./src/patches/field-misc.js?v=61"></script>
-    <script src="./src/patches/summary-screen.js?v=61"></script>
-    <script src="./src/patches/overworld-sprites.js?v=61"></script>
-    <script src="./src/patches/trainer-classes.js?v=61"></script>
-    <script src="./src/patches/variable-trainer-parties.js?v=61"></script>
-    <script src="./src/patches/item-expansion.js?v=61"></script>
-    <script src="./src/patches/extra-tms.js?v=61"></script>
-    <script src="./src/patches/nature-mints.js?v=61"></script>
-    <script src="./src/patches/bottle-caps.js?v=61"></script>
-    <script src="./app.js?v=61"></script>
-    <script src="./src/ui/init-ui.js?v=61"></script>
+    <script src="./src/core.js?v=63"></script>
+    <script src="./src/patches/registry.js?v=63"></script>
+    <script src="./src/patches/infrastructure.js?v=63"></script>
+    <script src="./src/patches/simple-sites.js?v=63"></script>
+    <script src="./src/patches/fairy-type.js?v=63"></script>
+    <script src="./src/patches/modern-type-chart.js?v=63"></script>
+    <script src="./vendor/armips/armips.js?v=63"></script>
+    <script src="./src/asm/armips-assembler.js?v=63"></script>
+    <script src="./src/asm/templates.js?v=63"></script>
+    <script src="./src/asm/battle-log.js?v=63"></script>
+    <script src="./src/battle-log-format.js?v=63"></script>
+    <script src="./src/patches/infinite-candy.js?v=63"></script>
+    <script src="./src/patches/item-renewal.js?v=63"></script>
+    <script src="./src/patches/text-speed.js?v=63"></script>
+    <script src="./src/patches/modern-status.js?v=63"></script>
+    <script src="./src/patches/battle-critical.js?v=63"></script>
+    <script src="./src/patches/rng-generation.js?v=63"></script>
+    <script src="./src/patches/wild-natures.js?v=63"></script>
+    <script src="./src/patches/battle-weather.js?v=63"></script>
+    <script src="./src/patches/frame-rate.js?v=63"></script>
+    <script src="./src/patches/field-movement.js?v=63"></script>
+    <script src="./src/patches/field-misc.js?v=63"></script>
+    <script src="./src/patches/summary-screen.js?v=63"></script>
+    <script src="./src/patches/battle-log.js?v=63"></script>
+    <script src="./src/patches/overworld-sprites.js?v=63"></script>
+    <script src="./src/patches/trainer-classes.js?v=63"></script>
+    <script src="./src/patches/variable-trainer-parties.js?v=63"></script>
+    <script src="./src/patches/item-expansion.js?v=63"></script>
+    <script src="./src/patches/extra-tms.js?v=63"></script>
+    <script src="./src/patches/nature-mints.js?v=63"></script>
+    <script src="./src/patches/bottle-caps.js?v=63"></script>
+    <script src="./src/patches/modern-held-items.js?v=63"></script>
+    <script src="./app.js?v=63"></script>
+    <script src="./src/ui/init-ui.js?v=63"></script>
   </body>
 </html>

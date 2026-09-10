@@ -185,6 +185,16 @@
     throw new Error("PlatinumPatcherSummaryScreenPatches failed to load.");
   }
 
+  const battleLogPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/battle-log.js")(core)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherBattleLogPatch
+        : undefined;
+  if (!battleLogPatches) {
+    throw new Error("PlatinumPatcherBattleLogPatch failed to load.");
+  }
+
   const overworldSpritePatches =
     typeof module !== "undefined" && module.exports && typeof require === "function"
       ? require("./src/patches/overworld-sprites.js")(core)
@@ -255,6 +265,16 @@
     throw new Error("PlatinumPatcherBottleCapPatches failed to load.");
   }
 
+  const modernHeldItemPatches =
+    typeof module !== "undefined" && module.exports && typeof require === "function"
+      ? require("./src/patches/modern-held-items.js")(core, itemExpansionPatches)
+      : typeof window !== "undefined"
+        ? window.PlatinumPatcherModernHeldItemPatches
+        : undefined;
+  if (!modernHeldItemPatches) {
+    throw new Error("PlatinumPatcherModernHeldItemPatches failed to load.");
+  }
+
   const { createPatchRegistry } = registryModule;
   const {
     PatchError,
@@ -282,10 +302,11 @@
   const EXTRA_TM_TABLE_OFFSET = 0x500;
   const EXTRA_TM_TABLE_MAX_ROWS = 60;
   const EXTRA_TM_PERSONAL_MASK_OFFSET = 0x28;
-  const EXPANDED_ITEM_PATCH_IDS = ["extraTMs", "natureMints", "bottleCaps"];
+  const EXPANDED_ITEM_PATCH_IDS = ["extraTMs", "natureMints", "bottleCaps", "modernHeldItems"];
   const EXPANDED_ITEM_PATCH_MARKERS = {
     natureMints: "NATUREMINTV1",
     bottleCaps: "BOTTLECAPV1",
+    modernHeldItems: ["MODHELDITEMV2", "MODHELDITEMV1"],
   };
   const MOVE_NAMES_MESSAGE_MEMBER = 647;
   const SPECIES_NAMES_MESSAGE_MEMBER = 412;
@@ -330,6 +351,7 @@
     extraTMs: "Extra TMs",
     natureMints: "Nature Mints",
     bottleCaps: "Bottle Caps",
+    modernHeldItems: "Modern Held Items",
     fairyType: "Fairy Patch",
     fairyPokemonTypes: "Update Pokemon Types",
     modernSteelType: "Modern Steel Type",
@@ -337,11 +359,12 @@
     text4x: "Experimental text speed",
     playerAccuracy: "Player accuracy bypass",
     natureStatColors: "Nature stat colors",
+    battleLog: "Battle Log",
     customOverworldSprites: "Custom overworld sprites",
     trainerClassExpansion: "Trainer Class Expansion",
     variableTrainerParties: "Variable Trainer Parties",
   };
-  const APP_VERSION = "v61";
+  const APP_VERSION = "v63";
   const PATCH_INFO = {
     arm9Expansion: {
       title: "DSPRE ARM9 expansion",
@@ -354,15 +377,27 @@
         "If data/weather_sys.narc grows, later ROM files are shifted forward and their FAT entries are updated.",
       ],
     },
+    battleLog: {
+      title: "Battle Log",
+      summary:
+        "Records completed trainer battles, player-team snapshots, held items, movesets, and KO attribution. The summary screen displays family-aggregated Frags in place of ID No.",
+      regions: [
+        "Requires and automatically includes the DSPRE synthetic-overlay loader; helper code uses the idempotent PLATBTLGV1 allocation marker.",
+        "Repurposes downloaded Battle Recording sectors 38-43 and 102-104. My Recording remains available, but all three downloaded recording slots become unavailable and their old contents are discarded lazily.",
+        "Writes versioned 52-byte records for up to 600 opposing trainers. Each record contains trainer ID, the starting player party, held items, four moves per slot, and player/AI KO slot attribution.",
+        "Appends one generated ancestry-bitset member to poketool/personal/evo.narc without changing existing member or NitroFS file IDs.",
+        "Hooks verified Platinum US battle initialization, target resolution, faint handling, normal teardown, post-battle field return, recording guards, and the Pokemon Summary formatter.",
+      ],
+    },
     fairyType: {
       title: "Fairy Patch",
       summary:
-        "Adds Fairy as the old ??? type slot. This covers battle effectiveness and the visible type icons. The optional Pokemon type checkbox retags a small list of Pokemon without touching their stats, moves, or abilities.",
+        "Adds Fairy as the old ??? type slot. A conventional relocated type chart is shared by damage, hazards, trainer AI, conditional immunity handling, and Conversion 2. The optional Pokemon type checkbox retags a small list of Pokemon without touching their stats, moves, or abilities.",
       regions: [
-        "ARM9 helper: RAM 0x020F9400-0x020F943F / ROM 0x000FD400-0x000FD43F.",
-        "Overlay 16 type table: +0x33B94-0x33CE2.",
-        "Overlay 16 read hooks: +0x1A01A/+0x1A074 clean, +0x1A022/+0x1A07C pkaizo.",
-        "Overlay 16 loop-step edits: +0x19FB6, +0x1A084, +0x1A766 clean; shifted +0x8 in pkaizo.",
+        "Requires and automatically includes the DSPRE synthetic-overlay loader; the canonical 124-row chart uses the FAIRYTBLV2 allocation marker.",
+        "Overlay 16 table literals used by BattleSystem_ApplyTypeChart, BattleSystem_CalcEffectiveness, BattleSystem_TypeMatchupMultiplier, BattleSystem_TypeMatchup, BasicTypeMulApplies, and NoImmunityOverrides are redirected to the relocated chart.",
+        "Overlay 16 BattleSystem_TypeMatchup row count is expanded from 112 to 124 so Conversion 2 can read the added relationships safely.",
+        "ROMs containing the old compressed Fairy table are migrated automatically by restoring the five compressed-reader edits and leaving the retired in-place table/helper inert.",
         "Overlay 21 Pokedex display routing: +0xE408-0xE477.",
         "NARC assets: battle/graphic/pl_batt_obj.narc members 74 and 236; resource/eng/zukan/zukan.narc members 88, 89, and 90.",
         "Optional Pokemon type update: bytes 6 and 7 of selected poketool/personal/pl_personal.narc entries.",
@@ -371,10 +406,10 @@
     modernSteelType: {
       title: "Modern Steel Type",
       summary:
-        "Uses the modern Steel defensive chart by making Ghost and Dark hit Steel neutrally instead of not very effectively. When Fairy Patch is also selected, it updates the Fairy compressed chart and verifies Steel is super-effective against Fairy.",
+        "Uses the modern Steel defensive chart by making Ghost and Dark hit Steel neutrally instead of not very effectively. When Fairy Patch is also selected, it updates the relocated conventional chart and verifies Steel is super-effective against Fairy.",
       regions: [
         "Vanilla overlay 16 type chart: Ghost -> Steel multiplier byte at +0x33CAD, Dark -> Steel multiplier byte at +0x33CC5.",
-        "Fairy overlay 16 compressed type chart: multiplier nibbles at +0x33CCE and +0x33CD2 for Ghost/Dark -> Steel, and +0x33CDA for Steel -> Fairy.",
+        "With Fairy Patch: updates the corresponding 3-byte rows inside the dynamically allocated FAIRYTBLV2 synthetic-overlay chart.",
       ],
     },
     frameRate: {
@@ -703,11 +738,11 @@
       summary:
         "Adds real new item IDs starting at 468 through a synthetic-overlay overflow item table and Wi-Fi History overflow bag rows. Rows can optionally behave as extra TMs.",
       regions: [
-        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker ITEMEXPV1.",
+        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker ITEMEXPV2; older ITEMEXPV1 hooks migrate automatically while ITEMBAG2 save rows remain unchanged.",
         "ARM9 hooks: Item_FileID at RAM 0x0207CE78, Item_Load at RAM 0x0207CF48, Bag_GetPocketForItem at RAM 0x0207D40C, and BagContext_CreateWithPockets at RAM 0x0207D824.",
         "Overflow rows: generated item IDs start at 0x1D4 and point to cloned vanilla data/icon/palette members.",
         "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_WIFI_HISTORY so expanded IDs do not consume vanilla bag pocket slots.",
-        "Bag UI: the TM/HM pocket view is rebuilt from vanilla TM/HMs plus overflow TM rows in synthetic-overlay RAM scratch storage.",
+        "Bag UI: Items, Medicine, and TM/HM views are rebuilt from vanilla rows plus matching overflow rows in synthetic-overlay scratch storage. Items render up to 252 rows, with expanded rows prioritized at the limit.",
         "Item text: msgdata/pl_msg.narc members 391-394 add names, article names, plural names, and descriptions for expanded IDs.",
         "Overworld pickup compatibility: if DSPRE Item Standardization is already present, the standardized visible-item script file is extended for expanded IDs.",
       ],
@@ -750,6 +785,22 @@
         "Item text: msgdata/pl_msg.narc members 391-394 add the seven cap names, article names, plural names, and descriptions.",
         "Party messages: msgdata/pl_msg.narc member 453 entries 261-267 are used for the cap success text.",
         "Overworld pickup compatibility follows Item Expansion: DSPRE-standardized visible-item scripts are extended through the cap item IDs when Item Standardization is already present.",
+      ],
+    },
+    modernHeldItems: {
+      title: "Modern Held Items",
+      summary:
+        "Installs the shared expanded held-item system and all supported modern held items. The current bundle adds Eviolite, Loaded Dice, Clear Amulet, and Rocky Helmet.",
+      regions: [
+        "Requires Item Expansion and the DSPRE ARM9 expansion. Shared modern held-item code is stored in data/weather_sys.narc member 9 with marker MODHELDITEMV2.",
+        "All modern held items use one registry and coordinated hook set so future additions extend this patch instead of introducing separate patch combinations.",
+        "Overlay 16 battle item lookup hook: BattleSystem_GetItemData at RAM 0x0225B0FC / overlay 16 +0x1FFBC resolves custom expanded held effects.",
+        "Overlay 16 damage dispatch hook: RAM 0x0225A798 / overlay 16 +0x1F658 applies Eviolite before ability-based defensive modifiers.",
+        "Overlay 16 multi-hit hook: BtlCmd_SetMultiHit at RAM 0x022422CA / overlay 16 +0x718A makes Loaded Dice roll four or five hits for variable 2-5-hit moves while preserving Skill Link and fixed-hit moves.",
+        "Overlay 16 stat-stage hook: BtlCmd_ChangeStatStage at RAM 0x02242400 / overlay 16 +0x72C0 lets Clear Amulet block preventable stat reductions caused by opposing Pokemon.",
+        "Overlay 16 held-item hooks: BattleSystem_TriggerHeldItemOnHit at RAM 0x022588BC and BattleSystem_TriggerHeldItemOnPivotMove at RAM 0x0225B228 apply persistent 1/6-max-HP Rocky Helmet recoil to contact attackers.",
+        "Evolution eligibility is generated from the loaded ROM's poketool/personal/evo.narc, so edited evolution families are respected.",
+        "All four items use neutral Nugget item data. Placeholder graphics clone Everstone, Metronome, Cleanse Tag, and Hard Stone respectively; every expanded item has its own name and description.",
       ],
     },
     playerAccuracy: {
@@ -1222,6 +1273,7 @@
     { id: "extraTMs", apply: extraTmPatches.extraTMs },
     { id: "natureMints", apply: natureMintPatches.natureMints },
     { id: "bottleCaps", apply: bottleCapPatches.bottleCaps },
+    { id: "modernHeldItems", apply: modernHeldItemPatches.modernHeldItems },
     { id: "fairyType", apply: fairyPatches.fairyType },
     { id: "fairyPokemonTypes", apply: fairyPatches.fairyPokemonTypes },
     { id: "modernSteelType", apply: modernTypeChartPatches.modernSteelType },
@@ -1229,6 +1281,7 @@
     { id: "text4x", apply: textSpeedPatches.text4x },
     { id: "playerAccuracy", apply: fieldMiscPatches.playerAccuracy },
     { id: "natureStatColors", apply: summaryScreenPatches.natureStatColors },
+    { id: "battleLog", apply: battleLogPatches.battleLog },
     { id: "customOverworldSprites", apply: overworldSpritePatches.customOverworldSprites },
     { id: "trainerClassExpansion", apply: trainerClassPatches.trainerClassExpansion },
     { id: "variableTrainerParties", apply: variableTrainerPartyPatches.variableTrainerParties },
@@ -1265,8 +1318,9 @@
           retainedExpandedItemPatches.push(PATCHES.extraTMs);
         }
       }
-      for (const [patchId, marker] of Object.entries(EXPANDED_ITEM_PATCH_MARKERS)) {
-        if (romHasAsciiMarker(rom, marker) && !selected.has(patchId)) {
+      for (const [patchId, configuredMarkers] of Object.entries(EXPANDED_ITEM_PATCH_MARKERS)) {
+        const markers = Array.isArray(configuredMarkers) ? configuredMarkers : [configuredMarkers];
+        if (markers.some((marker) => romHasAsciiMarker(rom, marker)) && !selected.has(patchId)) {
           selected.add(patchId);
           retainedExpandedItemPatches.push(PATCHES[patchId]);
         }
@@ -1288,6 +1342,7 @@
       extraTmsAutoExpandedItems: extraTmsUsesExpandedItems,
       natureMintsAutoExpandedItems: selected.has("natureMints"),
       bottleCapsAutoExpandedItems: selected.has("bottleCaps"),
+      modernHeldItemsAutoExpandedItems: selected.has("modernHeldItems"),
     };
     if (selected.has("extraTMs")) {
       selected.add("itemExpansion");
@@ -1296,6 +1351,9 @@
       selected.add("itemExpansion");
     }
     if (selected.has("bottleCaps")) {
+      selected.add("itemExpansion");
+    }
+    if (selected.has("modernHeldItems")) {
       selected.add("itemExpansion");
     }
     if (selected.has("modernSnow") && !selected.has("frostbite") && romHasAsciiMarker(rom, "FROSTBITEV1")) {
@@ -1308,6 +1366,7 @@
       selected.has("infiniteContinuousCandy") ||
       selected.has("itemRenewal") ||
       selected.has("natureStatColors") ||
+      selected.has("battleLog") ||
       selected.has("customOverworldSprites") ||
       selected.has("trainerClassExpansion") ||
       selected.has("variableTrainerParties") ||
@@ -1315,7 +1374,9 @@
       selected.has("extraTMs") ||
       selected.has("natureMints") ||
       selected.has("bottleCaps") ||
-      selected.has("frostbite")
+      selected.has("modernHeldItems") ||
+      selected.has("frostbite") ||
+      selected.has("fairyType")
     ) {
       selected.add("arm9Expansion");
     }
@@ -1440,6 +1501,8 @@
               ? "noevs"
             : id === "natureStatColors"
               ? "naturecolors"
+            : id === "battleLog"
+              ? "battlelog"
             : id === "customOverworldSprites"
               ? "customowsprites"
             : id === "trainerClassExpansion"
@@ -1470,6 +1533,8 @@
               ? "naturemints"
             : id === "bottleCaps"
               ? "bottlecaps"
+            : id === "modernHeldItems"
+              ? "modernhelditems"
             : id.replace(/_/g, "")
       )
       .join(".");

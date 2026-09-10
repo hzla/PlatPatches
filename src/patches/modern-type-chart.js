@@ -14,9 +14,14 @@
   const {
     OVERLAY_16,
     PatchError,
+    asciiBytes,
     bytesEqual,
+    findNeedle,
     getOverlayRange,
     hex,
+    readSyntheticOverlayMember,
+    readU16,
+    replaceSyntheticOverlayMember,
     writeBytes,
   } = core;
 
@@ -33,6 +38,10 @@ const TYPE_TABLE_REL = 0x33b94;
 const VANILLA_TYPE_TABLE_SCAN_LIMIT = 0x180;
 const VANILLA_ENTRY_SIZE = 3;
 const FAIRY_MULTIPLIER_NIBBLES_REL = 0x10c;
+const RELOCATED_FAIRY_MARKER = asciiBytes("FAIRYTBLV2");
+const RELOCATED_FAIRY_VERSION = 2;
+const RELOCATED_FAIRY_HEADER_SIZE = 0x10;
+const RELOCATED_FAIRY_ROW_COUNT = 124;
 
 const VANILLA_TYPE_TABLE_PREFIX = new Uint8Array([
   0x00, 0x05, TYPE_MULTI_NOT_VERY_EFF,
@@ -86,6 +95,17 @@ const MODERN_STEEL_FAIRY_RELATIONSHIPS = [
     patchedNibble: FAIRY_MULTI_SUPER_EFF_NIBBLE,
     label: "Steel -> Fairy",
     absentIsNeutral: false,
+  },
+];
+
+const MODERN_STEEL_RELOCATED_FAIRY_RELATIONSHIPS = [
+  ...MODERN_STEEL_VANILLA_RELATIONSHIPS,
+  {
+    attackingType: TYPE_STEEL,
+    defendingType: TYPE_FAIRY,
+    originalMultiplier: TYPE_MULTI_NOT_VERY_EFF,
+    patchedMultiplier: 20,
+    label: "Steel -> Fairy",
   },
 ];
 
@@ -254,7 +274,95 @@ function patchFairyModernSteelType(rom, overlay, force, log) {
   );
 }
 
+function findRelocatedFairyTypeChart(rom) {
+  let member;
+  try {
+    member = readSyntheticOverlayMember(rom).member;
+  } catch (error) {
+    if (error instanceof PatchError) {
+      return null;
+    }
+    throw error;
+  }
+  const markerOffsets = findNeedle(member, RELOCATED_FAIRY_MARKER, 0, member.length);
+  if (!markerOffsets.length) {
+    return null;
+  }
+
+  const markerOffset = markerOffsets[markerOffsets.length - 1];
+  if (markerOffset + RELOCATED_FAIRY_HEADER_SIZE > member.length) {
+    throw new PatchError("Modern Steel Type found a truncated FAIRYTBLV2 payload.");
+  }
+  const version = readU16(member, markerOffset + 0x0a);
+  const rowCount = readU16(member, markerOffset + 0x0c);
+  const tableOffset = readU16(member, markerOffset + 0x0e);
+  if (
+    version !== RELOCATED_FAIRY_VERSION ||
+    rowCount !== RELOCATED_FAIRY_ROW_COUNT ||
+    tableOffset !== RELOCATED_FAIRY_HEADER_SIZE ||
+    markerOffset + tableOffset + rowCount * VANILLA_ENTRY_SIZE > member.length
+  ) {
+    throw new PatchError("Modern Steel Type found an unsupported FAIRYTBLV2 payload layout.");
+  }
+  return {
+    member,
+    markerOffset,
+    tableAt: markerOffset + tableOffset,
+  };
+}
+
+function patchRelocatedFairyModernSteelType(rom, relocated, force, log) {
+  const patchedMember = new Uint8Array(relocated.member);
+  let changed = 0;
+  const touched = [];
+  for (const relationship of MODERN_STEEL_RELOCATED_FAIRY_RELATIONSHIPS) {
+    const entry = findVanillaTypeEntry(
+      patchedMember,
+      relocated.tableAt,
+      relationship.attackingType,
+      relationship.defendingType
+    );
+    if (!entry) {
+      throw new PatchError(
+        `Modern Steel Type could not find ${relationship.label} in the relocated Fairy type chart.`
+      );
+    }
+    if (entry.multiplier === relationship.patchedMultiplier) {
+      touched.push(`${relationship.label}: +${hex(entry.rel + 2)}`);
+      continue;
+    }
+    if (entry.multiplier !== relationship.originalMultiplier && !force) {
+      throw new PatchError(
+        `Modern Steel Type sanity check failed for ${relationship.label} in the relocated Fairy type chart. Found multiplier ${hex(
+          entry.multiplier
+        )}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    writeBytes(
+      patchedMember,
+      relocated.tableAt + entry.rel + 2,
+      new Uint8Array([relationship.patchedMultiplier])
+    );
+    changed += 1;
+    touched.push(`${relationship.label}: +${hex(entry.rel + 2)}`);
+  }
+  if (changed) {
+    replaceSyntheticOverlayMember(rom, patchedMember);
+  }
+  log.push(
+    `Modern Steel Type: ${
+      changed ? `patched ${changed} relocated Fairy type-chart multiplier(s)` : "relocated Fairy type chart already has modern Steel matchups"
+    } (${touched.join(", ")}).`
+  );
+}
+
 function patchModernSteelType(rom, force, log) {
+  const relocated = findRelocatedFairyTypeChart(rom);
+  if (relocated) {
+    patchRelocatedFairyModernSteelType(rom, relocated, force, log);
+    return;
+  }
+
   const overlay = getOverlayRange(rom, OVERLAY_16);
   const tableAt = overlay.start + TYPE_TABLE_REL;
 

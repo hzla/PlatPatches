@@ -400,6 +400,10 @@ input[type="file"] {
   display: none;
 }
 
+.patch-card:has(input[value="modernHeldItems"]) {
+  display: none;
+}
+
 .trainer-class-toolbar {
   display: flex;
   flex-wrap: wrap;

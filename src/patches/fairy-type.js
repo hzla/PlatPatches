@@ -16,11 +16,12 @@
     OVERLAY_21,
     PatchError,
     SPECIES_JIGGLYPUFF,
+    SyntheticOverlayAllocator,
     arm9Offset,
+    asciiBytes,
     bytesEqual,
     bytesFromHex,
     findFileByPath,
-    findNeedle,
     getOverlayRange,
     hex,
     parseNarc,
@@ -28,6 +29,7 @@
     replaceNarcMembers,
     replaceRomFile,
     writeBytes,
+    writeU16,
     writeU32,
   } = core;
 
@@ -56,6 +58,14 @@ const FAIRY_TET_PATCH = bytesFromHex(`
 `);
 
 const FAIRY_TABLE_MULTIPLIER_NIBBLES_REL = 0x10c;
+const FAIRY_TABLE_MARKER_TEXT = "FAIRYTBLV2";
+const FAIRY_TABLE_MARKER = asciiBytes(FAIRY_TABLE_MARKER_TEXT);
+const FAIRY_TABLE_HEADER_SIZE = 0x10;
+const FAIRY_TABLE_VERSION = 2;
+const FAIRY_TYPE_CHART_ROW_COUNT = 124;
+const VANILLA_TYPE_CHART_RAM = 0x0226ecd4;
+const PKAIZO_TYPE_CHART_RAM = 0x0226ecf0;
+const PKAIZO_LAYOUT_SHIFT = 0x8;
 const TYPE_STEEL = 0x08;
 const TYPE_FAIRY = 0x09;
 const TYPE_MULTI_SUPER_EFF = 20;
@@ -90,6 +100,71 @@ if (fairyTypeChartMultiplier(TYPE_STEEL, TYPE_FAIRY) !== TYPE_MULTI_SUPER_EFF) {
   throw new Error("Fairy type chart must make Steel super-effective against Fairy.");
 }
 
+function buildConventionalFairyTypeChart() {
+  const regularRows = [];
+  const fairyRows = [];
+  const ghostImmunityRows = [];
+
+  for (let pairIndex = 0; pairIndex < FAIRY_TABLE_MULTIPLIER_NIBBLES_REL / 2; pairIndex += 1) {
+    const pairAt = pairIndex * 2;
+    const attackingType = FAIRY_TET_PATCH[pairAt];
+    const defendingType = FAIRY_TET_PATCH[pairAt + 1];
+    if (attackingType === 0xff && defendingType === 0xff) {
+      break;
+    }
+    if (attackingType === 0xfe && defendingType === 0xfe) {
+      continue;
+    }
+
+    const multiplierByte =
+      FAIRY_TET_PATCH[FAIRY_TABLE_MULTIPLIER_NIBBLES_REL + Math.floor(pairIndex / 2)];
+    const multiplierNibble = pairIndex % 2 === 0 ? multiplierByte >>> 4 : multiplierByte & 0x0f;
+    const row = [attackingType, defendingType, multiplierNibble * 5];
+    if (defendingType === TYPE_FAIRY || attackingType === TYPE_FAIRY) {
+      fairyRows.push(row);
+    } else if (
+      defendingType === 0x07 &&
+      (attackingType === 0x00 || attackingType === 0x01) &&
+      multiplierNibble === 0
+    ) {
+      ghostImmunityRows.push(row);
+    } else {
+      regularRows.push(row);
+    }
+  }
+
+  if (regularRows.length !== 108 || fairyRows.length !== 12 || ghostImmunityRows.length !== 2) {
+    throw new Error("Fairy type chart source rows do not match the expected Platinum layout.");
+  }
+
+  const rows = [
+    ...regularRows,
+    ...fairyRows,
+    [0xfe, 0xfe, 0x00],
+    ...ghostImmunityRows,
+    [0xff, 0xff, 0x00],
+  ];
+  if (rows.length !== FAIRY_TYPE_CHART_ROW_COUNT) {
+    throw new Error("Fairy type chart row count is invalid.");
+  }
+  return Uint8Array.from(rows.flat());
+}
+
+const FAIRY_TYPE_CHART = buildConventionalFairyTypeChart();
+
+function buildFairyTablePayload(payloadRamAddress) {
+  const bytes = new Uint8Array(FAIRY_TABLE_HEADER_SIZE + FAIRY_TYPE_CHART.length);
+  bytes.set(FAIRY_TABLE_MARKER, 0);
+  writeU16(bytes, 0x0a, FAIRY_TABLE_VERSION);
+  writeU16(bytes, 0x0c, FAIRY_TYPE_CHART_ROW_COUNT);
+  writeU16(bytes, 0x0e, FAIRY_TABLE_HEADER_SIZE);
+  bytes.set(FAIRY_TYPE_CHART, FAIRY_TABLE_HEADER_SIZE);
+  return {
+    bytes,
+    tableRamAddress: payloadRamAddress + FAIRY_TABLE_HEADER_SIZE,
+  };
+}
+
 const FAIRY_READ1_PATCH = bytesFromHex("c0 46 00 49 88 47 01 94 0f 02 c0 46");
 const FAIRY_READ2_PATCH = bytesFromHex("00 49 88 47 01 94 0f 02 c0 46 c0 46");
 const FAIRY_LOOP1_PATCH = bytesFromHex("c0 46");
@@ -101,6 +176,19 @@ const FAIRY_ARM9_HELPER = bytesFromHex(`
   2b 40 1a 46 05 25 6a 43 75 46 06 35 ae 46 38 bc
   28 46 39 46 01 49 08 47 d4 ec 26 02 3d b6 25 02
 `);
+
+const FAIRY_TYPE_CHART_POINTER_SITES = [
+  { rel: 0x19e60, delta: 1, label: "BasicTypeMulApplies defender-type pointer" },
+  { rel: 0x19e64, delta: 2, label: "BasicTypeMulApplies multiplier pointer" },
+  { rel: 0x1a18c, delta: 0, label: "BattleSystem_ApplyTypeChart table pointer" },
+  { rel: 0x1a2b4, delta: 0, label: "BattleSystem_CalcEffectiveness table pointer" },
+  { rel: 0x1a300, delta: 1, label: "NoImmunityOverrides defender-type pointer" },
+  { rel: 0x1a304, delta: 2, label: "NoImmunityOverrides multiplier pointer" },
+  { rel: 0x1a780, delta: 0, label: "BattleSystem_TypeMatchup attacking-type pointer" },
+  { rel: 0x1a784, delta: 1, label: "BattleSystem_TypeMatchup defender-type pointer" },
+  { rel: 0x1a788, delta: 2, label: "BattleSystem_TypeMatchup multiplier pointer" },
+  { rel: 0x1a7d4, delta: 0, label: "BattleSystem_TypeMatchupMultiplier table pointer" },
+];
 const FAIRY_POKEDEX_DISPLAY_PATCH = bytesFromHex(`
   49 88 8f 44 22 00 26 00 2a 00 2e 00 32 00 36 00
   3a 00 3e 00 42 00 66 00 46 00 4a 00 4e 00 52 00
@@ -394,163 +482,191 @@ const DEBUG_WILD_ENCOUNTER_SPECIES_OFFSETS = (() => {
   return offsets;
 })();
 
-function closestHit(hits, preferredOffset, label) {
-  if (!hits.length) {
-    return null;
-  }
-  hits.sort((a, b) => Math.abs(a - preferredOffset) - Math.abs(b - preferredOffset));
-  if (
-    hits.length > 1 &&
-    Math.abs(hits[0] - preferredOffset) === Math.abs(hits[1] - preferredOffset)
-  ) {
-    throw new PatchError(`${label} fallback scan found equally close candidates.`);
-  }
-  return hits[0];
-}
-
-function locatePatchSite(data, preferredOffset, expectedList, patched, radius, label, force) {
-  if (bytesEqual(data, preferredOffset, patched)) {
-    return { offset: preferredOffset, state: "already", usedFallback: false };
-  }
-  if (expectedList.some((expected) => bytesEqual(data, preferredOffset, expected))) {
-    return { offset: preferredOffset, state: "patch", usedFallback: false };
+function findFairyTypeChartLayoutShift(rom, overlay, relocatedTableRam, force) {
+  const applyPointerRel = 0x1a18c;
+  const acceptedPointers = new Set([
+    VANILLA_TYPE_CHART_RAM,
+    PKAIZO_TYPE_CHART_RAM,
+    relocatedTableRam,
+  ]);
+  const exactMatches = [0, PKAIZO_LAYOUT_SHIFT].filter((shift) =>
+    acceptedPointers.has(readU32(rom, overlay.start + applyPointerRel + shift))
+  );
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
   }
 
-  const start = preferredOffset - radius;
-  const end = preferredOffset + radius;
-  const expectedHits = [];
-  for (const expected of expectedList) {
-    expectedHits.push(...findNeedle(data, expected, start, end));
+  const nearbyMatches = [];
+  for (let shift = -0x30; shift <= 0x30; shift += 4) {
+    if (acceptedPointers.has(readU32(rom, overlay.start + applyPointerRel + shift))) {
+      nearbyMatches.push(shift);
+    }
   }
-  const expectedHit = closestHit(Array.from(new Set(expectedHits)), preferredOffset, label);
-  if (expectedHit != null) {
-    return { offset: expectedHit, state: "patch", usedFallback: expectedHit !== preferredOffset };
+  if (nearbyMatches.length === 1) {
+    return nearbyMatches[0];
   }
-
-  const patchedHit = closestHit(findNeedle(data, patched, start, end), preferredOffset, label);
-  if (patchedHit != null) {
-    return { offset: patchedHit, state: "already", usedFallback: patchedHit !== preferredOffset };
-  }
-
   if (!force) {
-    const found = Array.from(data.slice(preferredOffset, preferredOffset + patched.length))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join(" ");
     throw new PatchError(
-      `${label} sanity check failed at ${hex(preferredOffset)}. Found ${found}. Enable compatible modified bytes to patch anyway.`
+      `Fairy type chart could not identify the Overlay 16 battle-library layout near +${hex(
+        applyPointerRel
+      )}. Enable compatible modified bytes to patch anyway.`
     );
   }
-  return { offset: preferredOffset, state: "patch", usedFallback: false };
+  return 0;
 }
 
-function patchFairyCodeSite(rom, overlay, relativeOffset, expectedList, patched, label, force, log) {
-  const preferred = overlay.start + relativeOffset;
-  const located = locatePatchSite(rom, preferred, expectedList, patched, 0x30, label, force);
-  if (located.state !== "already") {
-    writeBytes(rom, located.offset, patched);
+function restoreLegacyFairyReaders(rom, overlay, layoutShift, force) {
+  const pkaizo = layoutShift === PKAIZO_LAYOUT_SHIFT;
+  const sites = [
+    {
+      rel: 0x1a01a,
+      label: "Fairy type read hook 1",
+      legacy: FAIRY_READ1_PATCH,
+      original: bytesFromHex(
+        pkaizo
+          ? "01 90 92 78 28 1c 39 1c 06 f0 75 fa"
+          : "01 90 92 78 28 1c 39 1c 06 f0 6b fa"
+      ),
+    },
+    {
+      rel: 0x1a074,
+      label: "Fairy type read hook 2",
+      legacy: FAIRY_READ2_PATCH,
+      original: bytesFromHex(
+        pkaizo
+          ? "01 90 92 78 28 1c 39 1c 06 f0 48 fa"
+          : "01 90 92 78 28 1c 39 1c 06 f0 3e fa"
+      ),
+    },
+    {
+      rel: 0x19fb6,
+      label: "Fairy type loop step 1",
+      legacy: FAIRY_LOOP1_PATCH,
+      original: bytesFromHex("20 18"),
+    },
+    {
+      rel: 0x1a084,
+      label: "Fairy type loop step 2",
+      legacy: FAIRY_LOOP2_PATCH,
+      original: bytesFromHex("60 00 21 18"),
+    },
+    {
+      rel: 0x1a766,
+      label: "Fairy type loop step 3",
+      legacy: FAIRY_LOOP3_PATCH,
+      original: bytesFromHex("08 18"),
+    },
+  ];
+
+  let migrated = 0;
+  for (const site of sites) {
+    const offset = overlay.start + site.rel + layoutShift;
+    if (bytesEqual(rom, offset, site.original)) {
+      continue;
+    }
+    if (!bytesEqual(rom, offset, site.legacy) && !force) {
+      throw new PatchError(
+        `${site.label} migration sanity check failed at overlay 16+${hex(
+          site.rel + layoutShift
+        )}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    if (bytesEqual(rom, offset, site.legacy)) {
+      migrated += 1;
+    }
+    writeBytes(rom, offset, site.original);
   }
-  log.push(
-    `${label}: ${located.state === "already" ? "already patched" : "wrote"} overlay 16+${hex(
-      located.offset - overlay.start
-    )}${located.usedFallback ? " (fallback scan)" : ""}.`
-  );
+  return migrated;
+}
+
+function patchFairyTypeMatchupRowCount(rom, overlay, layoutShift, force) {
+  const sites = [
+    { rel: 0x1a754, original: bytesFromHex("70 29"), patched: bytesFromHex("7c 29") },
+    { rel: 0x1a75c, original: bytesFromHex("70 21"), patched: bytesFromHex("7c 21") },
+  ];
+  let changed = 0;
+  for (const site of sites) {
+    const offset = overlay.start + site.rel + layoutShift;
+    if (bytesEqual(rom, offset, site.patched)) {
+      continue;
+    }
+    if (!bytesEqual(rom, offset, site.original) && !force) {
+      throw new PatchError(
+        `Fairy BattleSystem_TypeMatchup row-count sanity check failed at overlay 16+${hex(
+          site.rel + layoutShift
+        )}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    writeBytes(rom, offset, site.patched);
+    changed += 1;
+  }
+  return changed;
+}
+
+function redirectFairyTypeChartPointers(rom, overlay, layoutShift, tableRamAddress, force) {
+  let changed = 0;
+  const acceptedBases = [VANILLA_TYPE_CHART_RAM, PKAIZO_TYPE_CHART_RAM, tableRamAddress];
+  for (const site of FAIRY_TYPE_CHART_POINTER_SITES) {
+    const offset = overlay.start + site.rel + layoutShift;
+    const current = readU32(rom, offset);
+    const target = tableRamAddress + site.delta;
+    if (current === target) {
+      continue;
+    }
+    if (!acceptedBases.some((base) => current === base + site.delta) && !force) {
+      throw new PatchError(
+        `${site.label} sanity check failed at overlay 16+${hex(site.rel + layoutShift)}. Found ${hex(
+          current
+        )}. Enable compatible modified bytes to patch anyway.`
+      );
+    }
+    writeU32(rom, offset, target);
+    changed += 1;
+  }
+  return changed;
 }
 
 function patchFairyType(rom, force, log) {
+  const allocator = new SyntheticOverlayAllocator(rom, log);
+  const allocation = allocator.allocate({
+    marker: FAIRY_TABLE_MARKER_TEXT,
+    buildPayload: buildFairyTablePayload,
+    label: "Fairy type chart",
+    alignment: 0x10,
+    updateExisting: true,
+  });
+
   const overlay16 = getOverlayRange(rom, OVERLAY_16);
-  const tableAt = overlay16.start + 0x33b94;
-  const cleanTablePrefix = bytesFromHex("00 05 05 00 08 05 0a 0a");
-  const pkaizoTablePrefix = bytesFromHex("80 0d 81 0c 82 0f 83 01");
-  if (bytesEqual(rom, tableAt, FAIRY_TET_PATCH)) {
-    log.push(`Fairy type table: already patched at overlay 16+0x33B94.`);
-  } else {
-    const pkaizoCompatibleTable = bytesEqual(rom, tableAt, pkaizoTablePrefix);
-    if (
-      !bytesEqual(rom, tableAt, cleanTablePrefix) &&
-      !pkaizoCompatibleTable &&
-      !force
-    ) {
-      throw new PatchError(
-        `Fairy type table sanity check failed at overlay 16+0x33B94. Enable compatible modified bytes to patch anyway.`
-      );
-    }
-    writeBytes(rom, tableAt, FAIRY_TET_PATCH);
+  const tableRamAddress = allocation.built.tableRamAddress;
+  const layoutShift = findFairyTypeChartLayoutShift(rom, overlay16, tableRamAddress, force);
+  const legacyTableAt = overlay16.start + 0x33b94;
+  const legacyTableDetected = bytesEqual(rom, legacyTableAt, FAIRY_TET_PATCH);
+  const migratedReaders = restoreLegacyFairyReaders(rom, overlay16, layoutShift, force);
+  const rowCountChanges = patchFairyTypeMatchupRowCount(rom, overlay16, layoutShift, force);
+  const redirectedPointers = redirectFairyTypeChartPointers(
+    rom,
+    overlay16,
+    layoutShift,
+    tableRamAddress,
+    force
+  );
+
+  log.push(
+    `Fairy type chart: ${FAIRY_TYPE_CHART_ROW_COUNT} conventional 3-byte rows at synthetic-overlay RAM ${hex(
+      tableRamAddress
+    )}; ${redirectedPointers ? `redirected ${redirectedPointers}` : "verified all"} battle reader pointer(s), ${
+      rowCountChanges ? "expanded" : "verified"
+    } BattleSystem_TypeMatchup row count.`
+  );
+  if (legacyTableDetected || migratedReaders) {
     log.push(
-      `Fairy type table: wrote compressed table at overlay 16+0x33B94${
-        pkaizoCompatibleTable ? " (pkaizo-compatible table area)" : ""
-      }.`
+      `Fairy type migration: detected the old compressed implementation and restored ${migratedReaders} legacy reader edit(s); the old in-place table/helper are now inert.`
     );
   }
 
-  patchFairyCodeSite(
-    rom,
-    overlay16,
-    0x1a01a,
-    [
-      bytesFromHex("01 90 92 78 28 1c 39 1c 06 f0 6b fa"),
-      bytesFromHex("01 90 92 78 28 1c 39 1c 06 f0 75 fa"),
-    ],
-    FAIRY_READ1_PATCH,
-    "Fairy type read hook 1",
-    force,
-    log
-  );
-  patchFairyCodeSite(
-    rom,
-    overlay16,
-    0x1a074,
-    [
-      bytesFromHex("01 90 92 78 28 1c 39 1c 06 f0 3e fa"),
-      bytesFromHex("01 90 92 78 28 1c 39 1c 06 f0 48 fa"),
-    ],
-    FAIRY_READ2_PATCH,
-    "Fairy type read hook 2",
-    force,
-    log
-  );
-  patchFairyCodeSite(
-    rom,
-    overlay16,
-    0x19fb6,
-    [bytesFromHex("20 18")],
-    FAIRY_LOOP1_PATCH,
-    "Fairy type loop step 1",
-    force,
-    log
-  );
-  patchFairyCodeSite(
-    rom,
-    overlay16,
-    0x1a084,
-    [bytesFromHex("60 00 21 18")],
-    FAIRY_LOOP2_PATCH,
-    "Fairy type loop step 2",
-    force,
-    log
-  );
-  patchFairyCodeSite(
-    rom,
-    overlay16,
-    0x1a766,
-    [bytesFromHex("08 18")],
-    FAIRY_LOOP3_PATCH,
-    "Fairy type loop step 3",
-    force,
-    log
-  );
-
   const helperAt = arm9Offset(rom, 0x020f9400, FAIRY_ARM9_HELPER.length);
-  if (bytesEqual(rom, helperAt, FAIRY_ARM9_HELPER)) {
-    log.push(`Fairy type ARM9 helper: already patched at ARM9 file ${hex(helperAt)} / RAM 0x20F9400.`);
-  } else {
-    const expectedFill = new Uint8Array(FAIRY_ARM9_HELPER.length);
-    if (!bytesEqual(rom, helperAt, expectedFill) && !force) {
-      throw new PatchError(
-        `Fairy type ARM9 helper cave at ${hex(helperAt)} is occupied. Apply Fairy before experimental text speed on a fresh ROM.`
-      );
-    }
-    writeBytes(rom, helperAt, FAIRY_ARM9_HELPER);
-    log.push(`Fairy type ARM9 helper: wrote ${FAIRY_ARM9_HELPER.length} bytes at ARM9 file ${hex(helperAt)} / RAM 0x20F9400.`);
+  if (bytesEqual(rom, helperAt, FAIRY_ARM9_HELPER) && !legacyTableDetected && !migratedReaders) {
+    log.push("Fairy type migration: preserved an inert legacy ARM9 decompression helper.");
   }
 
   const overlay21 = getOverlayRange(rom, OVERLAY_21);

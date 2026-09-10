@@ -81,6 +81,8 @@
   const BAG_UI_PRINT_TMHM_NUMBER_ORIGINAL = bytesFromHex("70 b5 84 b0 0e 1c 14 1c");
   const BAG_POCKET_SIZES_ORIGINAL = bytesFromHex("a5 28 0f 64 40 0c 1e 32");
   const BAG_POCKET_SIZES_PATCHED = bytesFromHex("a5 28 0f a0 40 0c 1e 32");
+  const BAG_POCKET_SIZES_ITEM_EXPANSION = bytesFromHex("fc 28 0f 64 40 0c 1e 32");
+  const BAG_POCKET_SIZES_FULL_EXPANSION = bytesFromHex("fc 28 0f a0 40 0c 1e 32");
   const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_ORIGINAL = bytesFromHex("01 28 01 d8 23 20 00 e0 00 20 48 75");
   const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED = bytesFromHex("01 28 01 d8 2b 20 00 e0 00 20 48 75");
   const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_TM_ONLY = bytesFromHex("00 28 01 d1 2b 20 00 e0 00 20 48 75");
@@ -405,8 +407,14 @@
   function patchExtraTmPocketSize(rom, log) {
     const overlay = getOverlayRange(rom, OVERLAY_84);
     const data = rom.slice(overlay.start, overlay.end);
-    const originalAt = findNeedle(data, BAG_POCKET_SIZES_ORIGINAL, 0, data.length);
-    const patchedAt = findNeedle(data, BAG_POCKET_SIZES_PATCHED, 0, data.length);
+    const originalAt = [
+      ...findNeedle(data, BAG_POCKET_SIZES_ORIGINAL, 0, data.length),
+      ...findNeedle(data, BAG_POCKET_SIZES_ITEM_EXPANSION, 0, data.length),
+    ];
+    const patchedAt = [
+      ...findNeedle(data, BAG_POCKET_SIZES_PATCHED, 0, data.length),
+      ...findNeedle(data, BAG_POCKET_SIZES_FULL_EXPANSION, 0, data.length),
+    ];
     if (patchedAt.length === 1) {
       log.push(
         `Extra TMs: TM/HM rendered pocket size already expanded to ${TMHM_RENDERED_POCKET_SIZE} at overlay 84 RAM ${hex(
@@ -420,7 +428,7 @@
         `Extra TMs TM/HM rendered pocket-size table matched ${originalAt.length} active location(s).`
       );
     }
-    writeBytes(rom, overlay.start + originalAt[0], BAG_POCKET_SIZES_PATCHED);
+    rom[overlay.start + originalAt[0] + 3] = TMHM_RENDERED_POCKET_SIZE;
     log.push(
       `Extra TMs: expanded TM/HM rendered pocket size to ${TMHM_RENDERED_POCKET_SIZE} at overlay 84 RAM ${hex(
         overlay.loadAddress + originalAt[0]

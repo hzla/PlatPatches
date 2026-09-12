@@ -625,10 +625,11 @@
     movementSpeed: {
       title: "Faster movement",
       summary:
-        "Speeds up player walking, running, and cycling by changing the movement action constants used by the player.",
+        "Doubles walking and running speed while preserving the running animation, and makes the bicycle reach its native top speed after its first movement.",
       regions: [
-        "ARM9 constants: RAM 0x0205FE22, 0x0205FE3E, 0x0205FF92, 0x0205FFB0, 0x02060394, 0x020603A8, 0x020603AC, 0x020603B0.",
-        "May also repair older pointer-table edits around ARM9 RAM 0x020EF194-0x020EF53C if it sees the previous patcher version.",
+        "ARM9 player action constants: RAM 0x0205FE22, 0x0205FE3E, 0x0205FF92, 0x0205FFB0, and bicycle acceleration at 0x020603C0.",
+        "Synthetic-overlay helpers preserve RUN state/animation while using the stable fast-walk motion path. All bicycle movement actions remain vanilla.",
+        "Repairs older pointer-table, bicycle-action, and shortened-RUN-handler edits when detected.",
       ],
     },
     noOverworldPoison: {
@@ -1375,6 +1376,7 @@
       selected.has("natureMints") ||
       selected.has("bottleCaps") ||
       selected.has("modernHeldItems") ||
+      selected.has("movementSpeed") ||
       selected.has("frostbite") ||
       selected.has("fairyType")
     ) {

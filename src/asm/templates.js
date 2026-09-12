@@ -31,6 +31,138 @@
 `;
   }
 
+  function movementSpeedHelper({
+    runDispatchAddress,
+    visualTierAddress,
+    playerAvatarSetActionAddress,
+    localMapObjectSetAnimationAddress,
+    playerMovementDispatchAddress,
+  }) {
+    return `.nds
+.create "output.bin", ${hex32(runDispatchAddress)}
+.thumb
+.org ${hex32(runDispatchAddress)}
+  push {r3-r7,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  mov r7,r3
+  cmp r7,5
+  bne @@dispatch_vanilla
+  cmp r6,0x14
+  bcc @@dispatch_vanilla
+  cmp r6,0x17
+  bhi @@dispatch_vanilla
+  mov r0,r4
+  mov r1,r6
+  add r1,0x44
+  mov r2,r7
+  ldr r3,=${hex32(playerAvatarSetActionAddress | 1)}
+  blx r3
+  mov r0,r5
+  mov r1,r6
+  ldr r3,=${hex32(localMapObjectSetAnimationAddress | 1)}
+  blx r3
+  pop {r3-r7,pc}
+@@dispatch_vanilla:
+  mov r0,r4
+  mov r1,r5
+  mov r2,r6
+  mov r3,r7
+  ldr r4,=${hex32(playerMovementDispatchAddress | 1)}
+  blx r4
+  pop {r3-r7,pc}
+  .pool
+
+.org ${hex32(visualTierAddress)}
+  push {r2,lr}
+  cmp r1,5
+  bne @@store_tier
+  mov r2,r0
+  add r2,0xA0
+  ldr r2,[r2,4]
+  cmp r2,0x14
+  bcc @@store_tier
+  cmp r2,0x17
+  bhi @@store_tier
+  ldr r2,[r0,0x10]
+  cmp r2,0
+  beq @@use_run_tier
+  cmp r2,0x61
+  bne @@store_tier
+@@use_run_tier:
+  mov r1,9
+@@store_tier:
+  add r0,0xA0
+  str r1,[r0]
+  pop {r2,pc}
+.close
+`;
+  }
+
+  function movementRunAnimationHelper({ helperAddress }) {
+    // Fast steps briefly enter idle; retain an existing run cycle instead of rounding it back to a keyframe.
+    return `.nds
+.create "output.bin", ${hex32(helperAddress)}
+.thumb
+  push {r3-r7,lr}
+  mov r4,r0
+  mov r5,r1
+  mov r6,r2
+  mov r7,r3
+  add r0,0xA0
+  ldr r0,[r0,4]
+  cmp r0,0x14
+  bcc @@vanilla
+  cmp r0,0x17
+  bhi @@vanilla
+  ldr r0,[r4,0x10]
+  cmp r0,0
+  beq @@fast_run
+  cmp r0,0x61
+  bne @@vanilla
+@@fast_run:
+  mov r0,r7
+  bl 0x021EDF24
+  str r0,[sp]
+  mov r0,0
+  ldsb r0,[r6,r0]
+  cmp r0,r7
+  bne @@reset
+  mov r0,r5
+  bl 0x02021358
+  ldr r1,[sp]
+  cmp r0,r1
+  beq @@advance
+@@reset:
+  mov r0,r5
+  ldr r1,[sp]
+  bl 0x02021344
+  mov r0,r5
+  mov r1,0
+  bl 0x020213A4
+@@advance:
+  mov r0,r4
+  bl 0x021ECD38
+  cmp r0,0
+  bne @@done
+  mov r0,r5
+  mov r1,2
+  lsl r1,r1,12
+  bl 0x02021368
+@@done:
+  pop {r3-r7,pc}
+@@vanilla:
+  mov r0,r4
+  mov r1,r5
+  mov r2,r6
+  mov r3,r7
+  bl 0x021EBEFC
+  pop {r3-r7,pc}
+.close
+`;
+  }
+
   function trainerClassExpansionHelper({ helperAddress, trainerLoadParamAddress, eyeBgmTableAddress }) {
     return `.nds
 .create "output.bin", ${hex32(helperAddress)}
@@ -3568,6 +3700,8 @@ ${evolvableRows.join("\n")}
     frostbiteHelper,
     modernFreezeHelper,
     modernHeldItemsHelper,
+    movementSpeedHelper,
+    movementRunAnimationHelper,
     modernParalysisThunderWaveHelper,
     modernSleepHelper,
     natureMintsHelper,

@@ -54,6 +54,7 @@ Notes:
 - The nature filter intentionally replaces wild nature generation with an allowed-nature table, so Synchronize no longer forces banned wild natures. It defaults to all 25 natures allowed; toggle off any natures you want to block.
 - The IV range patch rerolls each generated IV until it lands between the selected minimum and maximum, inclusive. The default range is `15-31`.
 - The movement patch now edits player movement constants instead of global movement action function tables. If it sees the older global movement edits made by this patcher, it restores those pointers before applying the safer player-scoped version.
+- Faster running preserves the sprite's animation phase across short steps and advances it at twice the vanilla cadence. A separate `RUNANIMV1` synthetic-overlay helper changes only the player running renderer; idle, walking, and bicycle renderer entries remain unchanged. Reapplying updates earlier movement-patched ROMs.
 - The remove overworld poison patch disables the step-based poison damage routine in the field. It does not change poison damage in battle.
 - The Infinite Candy patch turns the Red Chain key item into a reusable Rare Candy-style party item. It requires the player to already own the Red Chain, renames it to Infinite Candy, keeps it in Key Items, blocks tossing, prevents removal when used, and returns to the party target prompt after ordinary successful level-ups. Evolution and other special item flows are left to the normal game code.
 - The Item Renewal patch preserves player-side saved held items by masking held-item writeback messages instead of restoring from a separate snapshot table. Item loss still affects the current battle: consumed or lost items mark the matching battle-side knocked-off mask, so switching out and back in, opening the battle party screen, and viewing the battle party summary all keep the item absent until battle ends. Player-side doubles and tag partners use the same behavior; partner party data is temporary.
@@ -102,13 +103,12 @@ These are the ARM9 static binary regions this patcher may currently claim. ROM f
 | Shiny odds, advanced threshold | `0x02075E38-0x02075E63` | `0x00079E38-0x00079E63` | `0x2C` | Rewrites the shiny predicate for thresholds above one byte. |
 | Random IV range | `0x02073F48-0x02073FCB` | `0x00077F48-0x00077FCB` | `0x84` | Replaces the random IV generation block; includes an inline reroll helper. |
 | Faster movement constants | `0x0205FE22-0x0205FE23` | `0x00063E22-0x00063E23` | `0x2` | Walk base action. |
-| Faster movement constants | `0x0205FE3E-0x0205FE3F` | `0x00063E3E-0x00063E3F` | `0x2` | Run base action. |
+| Faster movement constants | `0x0205FE3E-0x0205FE3F` | `0x00063E3E-0x00063E3F` | `0x2` | Run motion action; RUN semantics and visuals are retained by the helper. |
 | Faster movement constants | `0x0205FF92-0x0205FF93` | `0x00063F92-0x00063F93` | `0x2` | Distortion World walk base action. |
-| Faster movement constants | `0x0205FFB0-0x0205FFB1` | `0x00063FB0-0x00063FB1` | `0x2` | Distortion World run base action. |
-| Faster movement constants | `0x02060394-0x02060395` | `0x00064394-0x00064395` | `0x2` | Bike default action. |
-| Faster movement constants | `0x020603A8-0x020603A9` | `0x000643A8-0x000643A9` | `0x2` | Bike low-gear action. |
-| Faster movement constants | `0x020603AC-0x020603AD` | `0x000643AC-0x000643AD` | `0x2` | Bike mid-gear action. |
-| Faster movement constants | `0x020603B0-0x020603B1` | `0x000643B0-0x000643B1` | `0x2` | Bike high-gear action. |
+| Faster movement constants | `0x0205FFB0-0x0205FFB1` | `0x00063FB0-0x00063FB1` | `0x2` | Distortion World run motion action. |
+| Faster movement bicycle acceleration | `0x020603C0-0x020603C1` | `0x000643C0-0x000643C1` | `0x2` | Reaches the native top-speed state after the first bicycle movement without replacing bicycle actions. |
+| Faster movement hooks | `0x0205FEBE`, `0x0205FFFE`, `0x020659B2` | `0x00063EBE`, `0x00063FFE`, `0x000699B2` | `0xC` | Preserves RUN state and animation while using the stable faster movement action. |
+| Faster movement legacy repair | Several ARM9 action-table, selector, and RUN-handler locations | Various | varies | Restores unsafe movement edits made by older patcher versions before installing the current implementation. |
 | Instant party healing | `0x02085734-0x02085735` | `0x00089734-0x00089735` | `0x2` | Speeds up party-menu item healing. |
 | Remove time evo clock checks | `0x02076DFA-0x02076DFD` | `0x0007ADFA-0x0007ADFD` | `0x4` | First held-item time evolution clock check. |
 | Remove time evo clock checks | `0x02076DE2-0x02076DE5` | `0x0007ADE2-0x0007ADE5` | `0x4` | Second held-item time evolution clock check. |
@@ -167,6 +167,7 @@ Observed overlay bases:
 
 | Patch | Overlay | Relative range | Loaded RAM range | pkaizo ROM file range | Size | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| Faster running animation | 5 | `0x2E69C-0x2E69F` | `0x021FF41C-0x021FF41F` | `0x0017FC9C-0x0017FC9F` | `0x4` | Walking renderer table's run entry points to dynamically allocated `RUNANIMV1` helper. Located only in active Overlay 5. |
 | Remove overworld poison | 5 | `0x1BA4-0x1BBB` | `0x021D1BE4-0x021D1BFB` | `0x001531A4-0x001531BB` | `0x18` | Skips the step-based poison damage/check sequence in the overworld. |
 | Remove Surf/Waterfall checks | 5 | `0x10F8-0x10FD` | `0x021D1E78-0x021D1E7D` | `0x001526F8-0x001526FD` | `0x6` | Changes the Waterfall descent no-HM branch at `+0x10F8` while sanity-checking the following set-flag instructions. |
 | Remove Surf/Waterfall checks | 5 | `0x1AB2-0x1AB5` | `0x021D2832-0x021D2835` | `0x001530B2-0x001530B5` | `0x4` | Allows Surf and Waterfall field-move use without requiring the matching HM move in the party. |

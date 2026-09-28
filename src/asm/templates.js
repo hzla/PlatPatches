@@ -1256,6 +1256,218 @@ ${compatMaskWords}
 `;
   }
 
+  function itemExpansionPersistenceHelper({ helperAddress, firstItemId, itemCount }) {
+    const base = helperAddress;
+    const ownerAddress = base + 0x1ef0;
+    const lookupAddress = base + 0x1e40;
+    return `.nds
+.create "output.bin", ${hex32(base + 0x1A80)}
+.thumb
+  .ascii "ITEMSAFEV1"
+  .fill 6,0
+
+; GeoNet cannot read or write the countries overlapping ITEMBAG2.
+.org ${hex32(base + 0x1a90)}
+  cmp r1,208
+  bcc @@get_allowed
+  mov r0,0
+  bx lr
+@@get_allowed:
+  push {r4-r6,lr}
+  mov r6,r0
+  mov r0,1
+  mov r5,r1
+  bl 0x0202C8D0
+
+.org ${hex32(base + 0x1ad0)}
+  cmp r1,208
+  bcc @@set_allowed
+  bx lr
+@@set_allowed:
+  push {r3-r7,lr}
+  mov r7,r0
+  mov r5,r1
+  mov r4,r2
+  str r3,[sp]
+  cmp r3,4
+  bl 0x0202C924
+
+.org ${hex32(base + 0x1b10)}
+  push {r3,lr}
+  ldr r3,=${hex32(ownerAddress)}
+  str r0,[r3]
+  bl ${hex32(base + 0x700)}
+  pop {r3,pc}
+  .pool
+
+; Bag-local use/toss/sell must remove from the owner before updating its view.
+.org ${hex32(base + 0x1b40)}
+  push {r4-r7,lr}
+  sub sp,12
+  str r0,[sp,4]
+  mov r4,r1
+  mov r5,r2
+  mov r6,r3
+  ldr r7,[sp,32]
+  str r7,[sp]
+  bl ${hex32(lookupAddress)}
+  cmp r0,0
+  beq @@remove_view
+  mov r1,r5
+  mov r2,r6
+  mov r3,r7
+  bl 0x0207D60C
+  cmp r0,0
+  beq @@remove_done
+@@remove_view:
+  ldr r0,[sp,4]
+  mov r1,r4
+  mov r2,r5
+  mov r3,r6
+  bl 0x0207D658
+@@remove_done:
+  add sp,12
+  pop {r4-r7,pc}
+
+; Persist vanilla item order without copying a truncated view over hidden rows.
+.org ${hex32(base + 0x1bc0)}
+  push {r4-r7,lr}
+  sub sp,20
+  str r0,[sp]
+  str r1,[sp,4]
+  str r2,[sp,8]
+  bl ${hex32(lookupAddress)}
+  cmp r0,0
+  beq @@move_view
+  str r1,[sp,12]
+  str r2,[sp,16]
+  ldr r0,[sp,4]
+  cmp r0,r3
+  bcs @@move_done
+  ldr r0,[sp,8]
+  cmp r0,r3
+  bhi @@move_done
+  ldr r0,[sp]
+  ldr r1,[sp,4]
+  lsl r1,r1,2
+  ldrh r6,[r0,r1]
+  cmp r6,0
+  beq @@move_done
+  ldr r7,=${hex32(firstItemId)}
+  cmp r6,r7
+  bcs @@move_done
+  mov r4,0
+@@find_source:
+  ldr r1,[sp,16]
+  cmp r4,r1
+  bcs @@move_done
+  ldr r0,[sp,12]
+  lsl r1,r4,2
+  ldrh r0,[r0,r1]
+  cmp r0,r6
+  beq @@source_found
+  add r4,1
+  b @@find_source
+@@source_found:
+  mov r5,0
+  mov r6,0
+@@count_before_destination:
+  ldr r1,[sp,8]
+  cmp r6,r1
+  bcs @@move_owner
+  ldr r0,[sp]
+  lsl r1,r6,2
+  add r0,r0,r1
+  ldrh r1,[r0]
+  cmp r1,0
+  beq @@next_destination
+  cmp r1,r7
+  bcs @@next_destination
+  ldrh r1,[r0,2]
+  cmp r1,0
+  beq @@next_destination
+  add r5,1
+@@next_destination:
+  add r6,1
+  b @@count_before_destination
+@@move_owner:
+  ldr r0,[sp,12]
+  mov r1,r4
+  mov r2,r5
+  bl 0x0207CDEC
+@@move_view:
+  ldr r0,[sp]
+  ldr r1,[sp,4]
+  ldr r2,[sp,8]
+  bl 0x0207CDEC
+@@move_done:
+  add sp,20
+  pop {r4-r7,pc}
+  .pool
+
+; Successful Bag mutations arrive with the original function's stack still intact.
+.org ${hex32(base + 0x1cc0)}
+  mov r0,r5
+  b ${hex32(base + 0x1d20)}
+
+.org ${hex32(base + 0x1d00)}
+  mov r0,r7
+  b ${hex32(base + 0x1d20)}
+.org ${hex32(base + 0x1d20)}
+  ldr r1,=${hex32(firstItemId)}
+  cmp r0,r1
+  bcc @@mutation_done
+  sub r0,r0,r1
+  ldr r1,=${hex32(itemCount)}
+  cmp r0,r1
+  bcs @@mutation_done
+  mov r0,30
+  bl 0x02025C84
+@@mutation_done:
+  mov r0,1
+  add sp,12
+  pop {r4-r7,pc}
+  .pool
+
+; Return owner Bag, vanilla pocket, vanilla capacity, rendered capacity (or owner=0).
+.org ${hex32(lookupAddress)}
+  ldr r1,=${hex32(base + 0x1200)}
+  cmp r0,r1
+  beq @@lookup_items
+  ldr r1,=${hex32(base + 0x1880)}
+  cmp r0,r1
+  beq @@lookup_medicine
+  ldr r1,=${hex32(base + 0x1600)}
+  cmp r0,r1
+  beq @@lookup_tms
+  mov r0,0
+  bx lr
+@@lookup_items:
+  mov r1,0
+  mov r2,165
+  mov r3,252
+  b @@lookup_owner
+@@lookup_medicine:
+  ldr r1,=0x51C
+  mov r2,40
+  mov r3,40
+  b @@lookup_owner
+@@lookup_tms:
+  ldr r1,=0x35C
+  mov r2,100
+  mov r3,160
+@@lookup_owner:
+  ldr r0,=${hex32(ownerAddress)}
+  ldr r0,[r0]
+  add r1,r0,r1
+  bx lr
+  .pool
+.org ${hex32(ownerAddress)}
+  .word 0
+.close
+`;
+  }
+
   function itemExpansionHelper({
     helperAddress,
     firstItemId,
@@ -1391,8 +1603,7 @@ ${compatMaskWords}
   ldr r0,=710
   bx lr
 @@invalid:
-  mov r0,0
-  bx lr
+  b @@item_none
   .pool
 
 .org ${hex32(itemLoadAddress)}
@@ -3693,6 +3904,7 @@ ${evolvableRows.join("\n")}
     infiniteCandyChainHelper,
     infiniteCandyPocketRemovalHelper,
     itemExpansionHelper,
+    itemExpansionPersistenceHelper,
     itemRenewalPartyHeldItemHelper,
     itemRenewalWritebackHelper,
     modernBurnHelper,

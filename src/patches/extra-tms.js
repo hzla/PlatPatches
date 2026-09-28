@@ -83,9 +83,12 @@
   const BAG_POCKET_SIZES_PATCHED = bytesFromHex("a5 28 0f a0 40 0c 1e 32");
   const BAG_POCKET_SIZES_ITEM_EXPANSION = bytesFromHex("fc 28 0f 64 40 0c 1e 32");
   const BAG_POCKET_SIZES_FULL_EXPANSION = bytesFromHex("fc 28 0f a0 40 0c 1e 32");
-  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_ORIGINAL = bytesFromHex("01 28 01 d8 23 20 00 e0 00 20 48 75");
-  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED = bytesFromHex("01 28 01 d8 2b 20 00 e0 00 20 48 75");
-  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_TM_ONLY = bytesFromHex("00 28 01 d1 2b 20 00 e0 00 20 48 75");
+  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_ORIGINAL = bytesFromHex("fd 30 00 06 00 0e 01 28 01 d8 23 20 00 e0 00 20 48 75");
+  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_SHARED = bytesFromHex("fd 30 00 06 00 0e 01 28 01 d8 2b 20 00 e0 00 20 48 75");
+  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_TM_ONLY = bytesFromHex("fd 30 00 06 00 0e 00 28 01 d1 2b 20 00 e0 00 20 48 75");
+  // r0 is the pocket type; r5 is scratch here. Default to 0, Berries to 35,
+  // and TM/HMs to 43 before storing ListMenuTemplate.textXOffset.
+  const BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED = bytesFromHex("00 25 04 28 00 d1 23 25 03 28 00 d1 2b 25 4d 75 c0 46");
 
   const HOOK_SITES = [
     {
@@ -481,24 +484,19 @@
   function patchExtraTmBagListIndentation(rom, log) {
     const overlay = getOverlayRange(rom, OVERLAY_84);
     const data = rom.slice(overlay.start, overlay.end);
-    let migratedLegacy = false;
-    let located;
-    try {
-      located = locateUniquePatch(
-        data,
-        BAG_NUMBERED_POCKET_TEXT_X_OFFSET_ORIGINAL,
-        BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED,
-        "Extra TMs numbered-pocket list indentation"
-      );
-    } catch (error) {
-      located = locateUniquePatch(
-        data,
-        BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_TM_ONLY,
-        BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED,
-        "Extra TMs legacy TM/HM-only list indentation"
-      );
-      migratedLegacy = located.state !== "already";
+    const matches = [
+      [BAG_NUMBERED_POCKET_TEXT_X_OFFSET_ORIGINAL, "patch"],
+      [BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED, "already"],
+      [BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_SHARED, "legacy"],
+      [BAG_NUMBERED_POCKET_TEXT_X_OFFSET_LEGACY_TM_ONLY, "legacy"],
+    ].flatMap(([bytes, state]) => findNeedle(data, bytes, 0, data.length).map((offset) => ({ offset, state })));
+    if (matches.length === 0) {
+      throw new PatchError("Extra TMs pocket-specific list indentation could not be located.");
     }
+    if (matches.length !== 1) {
+      throw new PatchError(`Extra TMs pocket-specific list indentation matched multiple locations: ${matches.map(({ offset }) => hex(offset)).join(", ")}.`);
+    }
+    const located = matches[0];
 
     if (located.state !== "already") {
       writeBytes(rom, overlay.start + located.offset, BAG_NUMBERED_POCKET_TEXT_X_OFFSET_PATCHED);
@@ -507,11 +505,11 @@
     log.push(
       `Extra TMs: ${
         located.state === "already"
-          ? "numbered-pocket list indentation already patched"
-          : migratedLegacy
-            ? "migrated legacy TM/HM-only list indentation"
-            : "expanded numbered-pocket list indentation"
-      } at overlay 84 RAM ${hex(overlay.loadAddress + located.offset)}.`
+          ? "pocket-specific list indentation already patched"
+          : located.state === "legacy"
+            ? "migrated legacy list indentation"
+            : "expanded TM/HM list indentation"
+      } at overlay 84 RAM ${hex(overlay.loadAddress + located.offset)}; berry indentation remains vanilla.`
     );
   }
 

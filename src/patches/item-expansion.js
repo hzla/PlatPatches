@@ -2,15 +2,16 @@
   if (typeof module !== "undefined" && module.exports) {
     const assembler = require("../asm/armips-assembler.js");
     const templates = require("../asm/templates.js");
-    module.exports = (core) => factory(core, assembler, templates);
+    module.exports = (core) => factory(core, assembler, templates, require("./item-inventory.js")(core));
   } else {
     root.PlatinumPatcherItemExpansionPatches = factory(
       root.PlatinumPatcherCore,
       root.PlatinumPatcherArmipsAssembler,
-      root.PlatinumPatcherAsmTemplates
+      root.PlatinumPatcherAsmTemplates,
+      root.PlatinumPatcherItemInventory
     );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (core, assembler, asmTemplates) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (core, assembler, asmTemplates, inventory) {
   "use strict";
 
   if (!core) {
@@ -22,7 +23,6 @@
 
   const {
     DSPRE_SYNTH_OVERLAY_SIZE,
-    OVERLAY_84,
     PatchError,
     SYNTH_OVERLAY_RAM_BASE,
     SyntheticOverlayAllocator,
@@ -33,7 +33,6 @@
     findFileByPath,
     findNeedle,
     getArm9Info,
-    getOverlayRange,
     hex,
     messageBankEntries,
     narcMemberBytes,
@@ -96,9 +95,6 @@
   const BAG_CONTEXT_INIT_POCKET_RAM = 0x0207cb48;
   const POCKET_SORT_EMPTY_RAM = 0x0207d780;
   const BAG_POCKET_SIZES_RAM = 0x02241118;
-  const BAG_LOAD_CURRENT_POCKET_NAMES_RAM = 0x0223bfbc;
-  const BAG_INIT_ITEM_NAME_BUFFERS_RAM = 0x0223c158;
-  const BAG_FREE_ITEM_NAME_BUFFERS_RAM = 0x0223c178;
   const STRING_LIST_NEW_RAM = 0x02013a04;
   const STRING_LIST_ADD_FROM_MESSAGE_BANK_RAM = 0x02013a4c;
   const STRING_LIST_ADD_FROM_STRING_RAM = 0x02013a6c;
@@ -109,25 +105,9 @@
   const RENDERED_ITEM_POCKET_SIZE = 252;
   const VANILLA_ITEM_POCKET_SIZE = 165;
 
-  const BAG_UI_HOOK_SITES = [
-    {
-      label: "LoadCurrentPocketItemNames",
-      ram: BAG_LOAD_CURRENT_POCKET_NAMES_RAM,
-      entryKey: "bagLoadItemNamesAddress",
-      original: bytesFromHex("f8 b5 82 b0 05 1c c4 30"),
-    },
-    {
-      label: "InitItemNameBuffers",
-      ram: BAG_INIT_ITEM_NAME_BUFFERS_RAM,
-      entryKey: "bagInitItemNamesAddress",
-      original: bytesFromHex("f8 b5 59 26 05 1c 00 24"),
-    },
-    {
-      label: "FreeItemNameBuffers",
-      ram: BAG_FREE_ITEM_NAME_BUFFERS_RAM,
-      entryKey: "bagFreeItemNamesAddress",
-      original: bytesFromHex("70 b5 59 26 05 1c 00 24"),
-    },
+  const BAG_MUTATION_RETURNS = [
+    { ram: 0x0207d5b2, entryKey: "bagAddFinishAddress", label: "Bag_TryAddItem checksum" },
+    { ram: 0x0207d650, entryKey: "bagRemoveFinishAddress", label: "Bag_TryRemoveItem checksum" },
   ];
 
   const NATURE_NAMES = [
@@ -296,6 +276,19 @@
       ram: BAG_GET_POCKET_FOR_ITEM_RAM,
       entryKey: "bagGetPocketForItemAddress",
       original: bytesFromHex("70 b5 15 1c 04 1c 08 1c 04 9a 05 21"),
+      preserveR3: true,
+    },
+    {
+      label: "WiFiHistory_GetGeonetCommunicatedWith guard",
+      ram: 0x0202c8c8,
+      entryKey: "geonetGetAddress",
+      original: bytesFromHex("70 b5 06 1c 01 20 0d 1c"),
+    },
+    {
+      label: "WiFiHistory_SetGeonetCommunicatedWith guard",
+      ram: 0x0202c918,
+      entryKey: "geonetSetAddress",
+      original: bytesFromHex("f8 b5 07 1c 0d 1c 14 1c 00 93 04 2b"),
       preserveR3: true,
     },
   ];
@@ -821,6 +814,17 @@
     return bytes;
   }
 
+  function thumbBl(fromAddress, targetAddress) {
+    const displacement = targetAddress - fromAddress - 4;
+    if ((displacement & 1) || displacement < -0x400000 || displacement > 0x3ffffe) {
+      throw new PatchError("Item Expansion bag persistence hook is outside Thumb BL range.");
+    }
+    const bytes = new Uint8Array(4);
+    writeU16(bytes, 0, 0xf000 | ((displacement >> 12) & 0x7ff));
+    writeU16(bytes, 2, 0xf800 | ((displacement >> 1) & 0x7ff));
+    return bytes;
+  }
+
   function thumbAbsoluteBranchPreserveR3(targetAddress) {
     const bytes = new Uint8Array(12);
     writeU16(bytes, 0, 0xb508); // push {r3, lr}
@@ -834,6 +838,7 @@
   async function buildItemExpansionPayload(payloadAddress, archiveEntries) {
     const helperAddress = payloadAddress + MARKER.length;
     let helper;
+    let persistence;
     try {
       helper = await assembler.assembleArmips({
         source: asmTemplates.itemExpansionHelper({
@@ -866,40 +871,59 @@
           vanillaItemPocketSize: VANILLA_ITEM_POCKET_SIZE,
         }),
       });
+      persistence = await assembler.assembleArmips({
+        source: asmTemplates.itemExpansionPersistenceHelper({
+          helperAddress,
+          firstItemId: FIRST_EXPANDED_ITEM_ID,
+          itemCount: archiveEntries.length,
+        }),
+      });
     } catch (error) {
       throw new PatchError(`Item Expansion armips helper assembly failed: ${error.message}`);
     }
 
-    const bytes = new Uint8Array(MARKER.length + helper.length);
+    const persistenceOffset = 0x1a80;
+    if (helper.length > persistenceOffset) {
+      throw new PatchError("Item Expansion display payload overlaps its persistence helpers.");
+    }
+    const bytes = new Uint8Array(MARKER.length + persistenceOffset + persistence.length);
     bytes.set(MARKER);
     bytes.set(helper, MARKER.length);
+    bytes.set(persistence, MARKER.length + persistenceOffset);
     return {
       bytes,
       itemFileIdAddress: helperAddress,
       itemLoadAddress: helperAddress + 0x120,
-      bagContextCreateAddress: helperAddress + 0x700,
+      bagContextCreateAddress: helperAddress + 0x1b10,
       bagGetPocketForItemAddress: helperAddress + 0x860,
       bagLoadItemNamesAddress: helperAddress + 0xe00,
       bagInitItemNamesAddress: helperAddress + 0x1080,
       bagFreeItemNamesAddress: helperAddress + 0x1100,
       tableAddress: helperAddress + 0x280,
+      geonetGetAddress: helperAddress + 0x1a90,
+      geonetSetAddress: helperAddress + 0x1ad0,
+      bagRemoveFromViewAddress: helperAddress + 0x1b40,
+      bagReorderViewAddress: helperAddress + 0x1bc0,
+      bagAddFinishAddress: helperAddress + 0x1cc0,
+      bagRemoveFinishAddress: helperAddress + 0x1d00,
     };
   }
 
-  function isSyntheticOverlayHook(data, offset, preserveR3 = false) {
-    let target;
-    if (preserveR3) {
-      if (readU32(data, offset) !== 0x4b01b508 || readU32(data, offset + 4) !== 0xbd089301) {
-        return false;
-      }
-      target = readU32(data, offset + 8) & ~1;
-    } else {
-      if (readU32(data, offset) !== 0x47184b00) {
-        return false;
-      }
-      target = readU32(data, offset + 4) & ~1;
-    }
-    return target >= SYNTH_OVERLAY_RAM_BASE && target < SYNTH_OVERLAY_RAM_BASE + DSPRE_SYNTH_OVERLAY_SIZE;
+  function previousItemEntryAddresses(rom) {
+    const member = readSyntheticOverlayMember(rom).member;
+    const bases = [MARKER_TEXT, LEGACY_MARKER_TEXT].flatMap((marker) =>
+      findNeedle(member, asciiBytes(marker), 0, member.length)
+        .map((offset) => SYNTH_OVERLAY_RAM_BASE + offset + MARKER.length));
+    const offsets = {
+      itemFileIdAddress: [0], itemLoadAddress: [0x120],
+      bagContextCreateAddress: [0x700, 0x1b10], bagGetPocketForItemAddress: [0x860],
+      bagLoadItemNamesAddress: [0xe00], bagInitItemNamesAddress: [0x1080], bagFreeItemNamesAddress: [0x1100],
+      geonetGetAddress: [0x1a90], geonetSetAddress: [0x1ad0],
+      bagRemoveFromViewAddress: [0x1b40], bagReorderViewAddress: [0x1bc0],
+      bagAddFinishAddress: [0x1cc0], bagRemoveFinishAddress: [0x1d00],
+    };
+    return Object.fromEntries(Object.entries(offsets).map(([name, entries]) =>
+      [name, bases.flatMap((base) => entries.map((offset) => base + offset))]));
   }
 
   function hasSyntheticOverlayMarker(rom, marker) {
@@ -911,62 +935,10 @@
     }
   }
 
-  function patchItemExpansionBagPocketSize(rom, log) {
-    const overlay = getOverlayRange(rom, OVERLAY_84);
-    const offset = overlay.start + BAG_POCKET_SIZES_RAM - overlay.loadAddress;
-    const current = rom.slice(offset, offset + 8);
-    const validTail =
-      current[1] === 0x28 &&
-      current[2] === 0x0f &&
-      (current[3] === 0x64 || current[3] === 0xa0) &&
-      bytesEqual(current, 4, bytesFromHex("40 0c 1e 32"));
-    if (!validTail || (current[0] !== VANILLA_ITEM_POCKET_SIZE && current[0] !== RENDERED_ITEM_POCKET_SIZE)) {
-      throw new PatchError(
-        `Item Expansion Items-pocket rendered-size table sanity check failed at overlay 84 RAM ${hex(
-          BAG_POCKET_SIZES_RAM
-        )}.`
-      );
-    }
-    if (current[0] === RENDERED_ITEM_POCKET_SIZE) {
-      log.push(`Item Expansion: Items-pocket rendered capacity is already ${RENDERED_ITEM_POCKET_SIZE}.`);
-      return;
-    }
-    rom[offset] = RENDERED_ITEM_POCKET_SIZE;
-    log.push(
-      `Item Expansion: expanded the overlay 84 Items-pocket rendered capacity from ${VANILLA_ITEM_POCKET_SIZE} to ${RENDERED_ITEM_POCKET_SIZE}.`
-    );
-  }
-
-  function patchItemExpansionBagUiHooks(rom, force, log, built) {
-    const overlay = getOverlayRange(rom, OVERLAY_84);
-    const changed = [];
-    for (const hook of BAG_UI_HOOK_SITES) {
-      const offset = overlay.start + hook.ram - overlay.loadAddress;
-      const patched = thumbAbsoluteBranch(built[hook.entryKey]);
-      let state;
-      try {
-        state = requireBytes(rom, offset, hook.original, patched, force, `Item Expansion ${hook.label} hook`);
-      } catch (error) {
-        if (!isSyntheticOverlayHook(rom, offset)) {
-          throw error;
-        }
-        state = "legacy";
-      }
-      if (state !== "already") {
-        writeBytes(rom, offset, patched);
-        changed.push(state === "legacy" ? `${hook.label} migrated` : hook.label);
-      }
-    }
-    patchItemExpansionBagPocketSize(rom, log);
-    log.push(
-      `Item Expansion: ${
-        changed.length ? `installed ${changed.join(", ")} bag UI hook(s)` : "overflow-aware Items-pocket UI hooks already installed"
-      }.`
-    );
-  }
-
   async function patchItemExpansionArm9Hooks(rom, force, log, archiveEntries) {
     const legacyPayloadPresent = hasSyntheticOverlayMarker(rom, LEGACY_MARKER_TEXT);
+    // Capture these before the allocator moves an older payload to its reservation.
+    const previousEntries = previousItemEntryAddresses(rom);
     const allocator = new SyntheticOverlayAllocator(rom, log);
     const allocation = await allocator.allocateAsync({
       marker: MARKER_TEXT,
@@ -981,6 +953,7 @@
     const changedHooks = [];
 
     for (const hook of HOOK_SITES) {
+      if (hook.ram === BAG_CONTEXT_CREATE_WITH_POCKETS_RAM) continue;
       const offset = arm9Offset(rom, hook.ram, hook.original.length);
       const patched = hook.preserveR3
         ? thumbAbsoluteBranchPreserveR3(allocation.built[hook.entryKey])
@@ -991,9 +964,11 @@
           ? "patch"
           : (() => {
               try {
-                return requireBytes(rom, offset, hook.original, patched, force, `Item Expansion ${hook.label} hook`);
+                return requireBytes(rom, offset, hook.original, patched, false, `Item Expansion ${hook.label} hook`);
               } catch (error) {
-                if (!isSyntheticOverlayHook(rom, offset, hook.preserveR3)) {
+                const known = previousEntries[hook.entryKey] || [];
+                if (!known.some((target) => bytesEqual(rom, offset, thumbAbsoluteBranch(target)) ||
+                  (hook.preserveR3 && bytesEqual(rom, offset, thumbAbsoluteBranchPreserveR3(target))))) {
                   throw error;
                 }
                 return "legacy";
@@ -1005,13 +980,38 @@
       }
     }
 
-    patchItemExpansionBagUiHooks(rom, force, log, allocation.built);
+    // Leave the function entries available for Infinite Candy's removal hook.
+    for (const hook of BAG_MUTATION_RETURNS) {
+      const offset = arm9Offset(rom, hook.ram, 6);
+      const original = bytesFromHex("01 20 03 b0 f0 bd");
+      const patched = bytesFromHex("00 00 00 00 c0 46");
+      patched.set(thumbBl(hook.ram, allocation.built[hook.entryKey]));
+      const previous = (previousEntries[hook.entryKey] || []).map((target) => {
+        const bytes = bytesFromHex("00 00 00 00 c0 46");
+        bytes.set(thumbBl(hook.ram, target));
+        return bytes;
+      });
+      if (!previous.some((bytes) => bytesEqual(rom, offset, bytes))) {
+        requireBytes(rom, offset, original, patched, false, `Item Expansion ${hook.label}`);
+      }
+      writeBytes(rom, offset, patched);
+    }
+
+    // The map starts at +7. Stop before country 208 (+0xCF7), just before ITEMBAG2 at +0xCFC.
+    const dailyLimitOffset = arm9Offset(rom, 0x0202c9e2, 8);
+    const dailyOriginal = bytesFromHex("ff 21 7f 1c 09 01 8f 42");
+    const dailyPatched = bytesFromHex("cf 21 7f 1c 09 01 8f 42");
+    requireBytes(rom, dailyLimitOffset, dailyOriginal, dailyPatched, false, "Item Expansion GeoNet daily-update bound");
+    writeBytes(rom, dailyLimitOffset, dailyPatched);
+    log.push("Item Expansion: protected overflow inventory from GeoNet daily/contact writes (countries 208-255 disabled); bag use/toss/sell and vanilla reordering persist immediately, with post-mutation checksums.");
 
     if (legacyPayloadPresent) {
       log.push(
         "Item Expansion: migrated ITEMEXPV1 ROM hooks to ITEMEXPV2; existing ITEMBAG2 save rows remain valid without conversion."
       );
     }
+
+    await inventory.install(rom, log, archiveEntries, { ...allocation.built, previousEntries });
 
     log.push(
       `Item Expansion: ${

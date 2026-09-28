@@ -739,11 +739,15 @@
       summary:
         "Adds real new item IDs starting at 468 through a synthetic-overlay overflow item table and Wi-Fi History overflow bag rows. Rows can optionally behave as extra TMs.",
       regions: [
-        "Requires the DSPRE ARM9 expansion. Helper code is stored in data/weather_sys.narc member 9 with marker ITEMEXPV2; older ITEMEXPV1 hooks migrate automatically while ITEMBAG2 save rows remain unchanged.",
+        "Requires the DSPRE ARM9 expansion. ITEMEXPV2 holds the public item table; the separately allocated ITEMUIV3 runtime handles inventory views and safe item-data loading. Previous patcher hooks upgrade without changing ITEMBAG2 save rows.",
         "ARM9 hooks: Item_FileID at RAM 0x0207CE78, Item_Load at RAM 0x0207CF48, Bag_GetPocketForItem at RAM 0x0207D40C, and BagContext_CreateWithPockets at RAM 0x0207D824.",
         "Overflow rows: generated item IDs start at 0x1D4 and point to cloned vanilla data/icon/palette members.",
-        "Expanded inventory storage: ITEMBAGV2 data is initialized in the tail of SAVE_TABLE_ENTRY_WIFI_HISTORY so expanded IDs do not consume vanilla bag pocket slots.",
-        "Bag UI: Items, Medicine, and TM/HM views are rebuilt from vanilla rows plus matching overflow rows in synthetic-overlay scratch storage. Items render up to 252 rows, with expanded rows prioritized at the limit.",
+        "Expanded inventory storage: ITEMBAG2 data is initialized in the tail of SAVE_TABLE_ENTRY_WIFI_HISTORY so expanded IDs do not consume vanilla bag pocket slots.",
+        "GeoNet history for countries 208-255 is disabled to protect that save range from daily updates and contact/location registration. Existing valid overflow inventories stay in place; already-lost items require a save backup.",
+        "All eight bag pockets use controller-owned runtime views sized for their vanilla capacity plus configured expanded items. Counts and cursors remain 16-bit; TM01-TM92 precede extra TMs, followed by HM01-HM08.",
+        "Battle bag categories use bounded runtime arrays instead of the vanilla 36-entry limit, retaining six items per page. Held-item data is loaded from every NARC member with the engine's padded record stride.",
+        "Expanded Balls, Berries, Mail, and Key Items display and persist, but unsupported ball capture, mail, planting/Poffin, berry-tag and key-item actions are blocked without consuming items. Shop TM presentation and Day Care inheritance remain unchanged.",
+        "Bag use/toss/sell updates the real inventory immediately. Vanilla reordering is saved; expanded rows cannot be manually reordered. Wi-Fi History checksums are refreshed after expanded-item mutations finish sorting.",
         "Item text: msgdata/pl_msg.narc members 391-394 add names, article names, plural names, and descriptions for expanded IDs.",
         "Overworld pickup compatibility: if DSPRE Item Standardization is already present, the standardized visible-item script file is extended for expanded IDs.",
       ],

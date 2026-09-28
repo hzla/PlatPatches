@@ -186,14 +186,14 @@ async function main() {
   assert.strictEqual(loadedDiceTarget, core.SYNTH_OVERLAY_RAM_BASE + loadedDiceHelperOffset);
 
   const bagOverlay = core.getOverlayRange(first.rom, core.OVERLAY_84);
-  const itemExpansionMarkerOffset = Buffer.from(syntheticMember).indexOf(Buffer.from("ITEMEXPV2", "ascii"));
-  const itemExpansionHelperAddress = core.SYNTH_OVERLAY_RAM_BASE + itemExpansionMarkerOffset + 16;
+  const inventory = require("../src/patches/item-inventory.js")(core).installed(first.rom);
+  assert(inventory, "modern held items install the hardened inventory runtime");
   const pocketSizesOffset = bagOverlay.start + (0x02241118 - bagOverlay.loadAddress);
-  assert.strictEqual(first.rom[pocketSizesOffset], 252, "Items pocket must expose the V2 rendered capacity");
+  assert.strictEqual(first.rom[pocketSizesOffset], 165, "native pocket table stays unchanged; runtime owns rendered capacities");
   for (const [ram, target] of [
-    [0x0223bfbc, itemExpansionHelperAddress + 0xe00],
-    [0x0223c158, itemExpansionHelperAddress + 0x1080],
-    [0x0223c178, itemExpansionHelperAddress + 0x1100],
+    [0x0223bfbc, inventory.loadNames],
+    [0x0223c158, inventory.initNames],
+    [0x0223c178, inventory.freeNames],
   ]) {
     const hookOffset = bagOverlay.start + (ram - bagOverlay.loadAddress);
     assert.strictEqual(core.readU32(first.rom, hookOffset), 0x47184b00);

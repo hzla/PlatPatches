@@ -10,6 +10,10 @@ It does not recover inventory already erased by older ROMs.
 GeoNet protection, and post-mutation checksums. The new `ITEMUIV3` payload is a
 separate 4 KB allocator-managed reservation in `data/weather_sys.narc` member 9.
 Never assume its ROM offset or RAM address is fixed.
+The allocator excludes this entire declared reservation from free-space scans,
+including zero-valued lookup tables. Upgrades reset the obsolete 252-entry
+Items display setting, and always install Mints before Caps so the shared
+party-item hook reaches both handlers, even when only Caps was selected.
 
 ## Runtime Ownership
 

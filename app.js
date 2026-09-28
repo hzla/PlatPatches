@@ -1409,6 +1409,14 @@
         (patchId) => patchId !== "arm9Expansion" && patchId !== "fairyType" && patchId !== "itemExpansion"
       ),
     ];
+    // Mints resets the shared party-item fallback to vanilla; Caps chains to
+    // Mints. Retaining installed features must preserve that order too.
+    const mintIndex = orderedPatchIds.indexOf("natureMints");
+    const capIndex = orderedPatchIds.indexOf("bottleCaps");
+    if (capIndex >= 0 && mintIndex > capIndex) {
+      orderedPatchIds[capIndex] = "natureMints";
+      orderedPatchIds[mintIndex] = "bottleCaps";
+    }
     for (const patchId of orderedPatchIds) {
       if (patchId === "instantText" && selected.has("text4x")) {
         continue;

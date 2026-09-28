@@ -142,6 +142,10 @@
     ]) edit(rom, address, original, bl(address, built[name]), 84,
       [previous?.[name], ...(old || [])].filter(Boolean).map((target) => bl(address, target)));
 
+    // Older overflow views raised Items to 252 in the native size table. The
+    // controller-owned views replace that limit; normalize upgrades to clean builds.
+    edit(rom, 0x02241118, "a5", bytesFromHex("a5"), 84, [bytesFromHex("fc")]);
+
     // Use the aligned padding halfword without changing the 12-byte pocket ABI.
     for (const [address, original, value] of [
       [0x0223b6ce, "52 7b", 0x89d2], [0x0223b6f4, "52 7b", 0x89d2],

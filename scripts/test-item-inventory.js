@@ -28,6 +28,11 @@ function payload(rom) {
   const helper = core.SYNTH_OVERLAY_RAM_BASE + offset + 16;
   const runtime = require("../src/patches/item-inventory.js")(core).installed(rom);
   assert(runtime, "versioned inventory runtime present");
+  const runtimeOffset = core.findNeedle(member, core.asciiBytes("ITEMUIV3"), 0, member.length)[0];
+  for (const candyOffset of core.findNeedle(member, core.asciiBytes("chain_candy_red_v1"), 0, member.length)) {
+    assert(candyOffset + 0x68 <= runtimeOffset || candyOffset >= runtimeOffset + 0x1000,
+      "Infinite Candy must not allocate inside the inventory runtime's zero-valued lookup data");
+  }
   const overlay = core.getOverlayRange(rom, 84);
   for (const [address, destination, isOverlay] of [
     [0x0223dd22, runtime.removeFromView, true], [0x0223d464, runtime.reorderView, true],
@@ -89,6 +94,13 @@ async function main() {
   const { rom } = await app.applySelectedPatches(clean, patches, options);
   const current = payload(rom);
   assert.deepStrictEqual((await app.applySelectedPatches(rom, patches, options)).rom, rom, "exact reapply");
+  assert(Buffer.from((await app.applySelectedPatches(rom, ["bottleCaps"], {
+    expandedItems: options.expandedItems,
+  })).rom).equals(Buffer.from(rom)), "auto-retained Mints must run before Caps so both party-item handlers remain reachable");
+  const reversed = patches.filter((id) => id !== "natureMints" && id !== "bottleCaps");
+  reversed.splice(1, 0, "bottleCaps", "natureMints");
+  assert(Buffer.from((await app.applySelectedPatches(clean, reversed, options)).rom).equals(Buffer.from(rom)),
+    "reversed Mint/Cap selection must produce the canonical shared-hook chain");
   // Upgrade both historical spacing variants: shared 43px and TM-only with
   // berries incorrectly at 0px. Neither may survive a reapplication.
   for (const previous of [
@@ -145,6 +157,7 @@ async function main() {
   }
   core.writeU32(legacy, core.arm9Offset(legacy, 0x0207d828, 4), (current.helper + 0x700) | 1);
   const overlay = core.getOverlayRange(legacy, 84);
+  legacy[overlay.start + 0x02241118 - overlay.loadAddress] = 252;
   for (const [address, bytes] of [[0x0223dd22, "3f f6 99 fc"], [0x0223d464, "3f f6 c2 fc"]]) {
     core.writeBytes(legacy, overlay.start + address - overlay.loadAddress, core.bytesFromHex(bytes));
   }

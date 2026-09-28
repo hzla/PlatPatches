@@ -994,6 +994,20 @@ class SyntheticOverlayAllocator {
     return findNeedle(this.member, asciiBytes(marker), 0, this.member.length);
   }
 
+  findFreeOffset(length, alignment) {
+    const reserved = [...SYNTH_OVERLAY_RESERVED_RANGES];
+    // ITEMUIV3 declares its owned extent. Zero-valued lookup data inside that
+    // reservation is not a code cave, even when it contains a long zero run.
+    for (const start of this.markerOffsets("ITEMUIV3")) {
+      if (start + 28 > this.member.length || readU32(this.member, start + 16) !== 3 ||
+          readU32(this.member, start + 20) !== 0x1000 || start + 0x1000 > this.member.length) {
+        throw new PatchError("Invalid Item Inventory synthetic-overlay reservation.");
+      }
+      reserved.push({ start, end: start + 0x1000 });
+    }
+    return findAlignedZeroRun(this.member, length, alignment, reserved);
+  }
+
   findExisting(marker, buildPayload) {
     const existing = this.markerOffsets(marker);
     if (!existing.length) {
@@ -1095,7 +1109,7 @@ class SyntheticOverlayAllocator {
 
     const provisional = buildPayload(SYNTH_OVERLAY_RAM_BASE);
     const provisionalBytes = provisional.bytes || provisional;
-    const markerOffset = findAlignedZeroRun(this.member, provisionalBytes.length, alignment);
+    const markerOffset = this.findFreeOffset(provisionalBytes.length, alignment);
     if (markerOffset === -1) {
       throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
     }
@@ -1178,7 +1192,7 @@ class SyntheticOverlayAllocator {
 
     const provisional = await buildPayload(SYNTH_OVERLAY_RAM_BASE);
     const provisionalBytes = provisional.bytes || provisional;
-    const markerOffset = findAlignedZeroRun(this.member, provisionalBytes.length, alignment);
+    const markerOffset = this.findFreeOffset(provisionalBytes.length, alignment);
     if (markerOffset === -1) {
       throw new PatchError(`${label} could not find a free synthetic-overlay code cave.`);
     }
